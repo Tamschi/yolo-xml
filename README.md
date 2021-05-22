@@ -15,13 +15,25 @@
 
 An XML parser that respects your time.
 
-`yolo-xml` aims to be an easy-to-use XML parsing library that is *strictly* compliant to the XML specification and *safe* to run against potentially malicious inputs.
+`yolo-xml` aims to be an easy-to-use XML parsing library that is *strictly validating* according to the [XML specification](https://www.w3.org/XML/Core/#Publications) (version 1.1, including errata as of 2021-05) and *safe* to run against potentially malicious inputs.
 
-> These go hand-in-hand; **once `yolo-xml` has been sufficiently audited**, you should be able to use `yolo-xml` as barrier against [invalid XML format confusion](https://siguza.github.io/psychicpaper/) attacks due to its strictness, for example.
+> These go hand-in-hand; **once `yolo-xml` has been sufficiently audited**, you should be able to use it as barrier against [invalid XML format confusion](https://siguza.github.io/psychicpaper/) attacks due to its strictness, for example.
 >
-> In an ideal world nearly all parsers would be strict of course, but sometimes that's just not an option for one reason or another. (It should probably be more common though.)
+> In an ideal world nearly all parsers would be validating of course, but sometimes that's just not an option for one reason or another. (It should probably be more common though, even if [the specification says it's optional](https://www.w3.org/TR/2006/REC-xml11-20060816/#proc-types).)
 
 Apart from this, the library should be usable in as many ways as possible, for example with streamed XML as used in the XMPP protocol (which is the main motivation for creating `yolo-xml`).
+
+A few notes:
+
+* `yolo-xml` operates on `&mut futures_core::Stream<Item = Result<char, Box<E>>>`.
+* It is likely slower than other available XML parsers written in Rust.
+  > Safety (in the general sense), correctness and reasonably small code size are given higher priority. Optimization pull requests are still appreciated.
+* It is **Unicode-ignorant**, that is by itself **not fully normalizing and unable to check full normalization** as per section [2.13 Normalization Checking](https://www.w3.org/TR/2006/REC-xml11-20060816/#sec-normalization-checking).
+  > It's possible to provide such a normalizer or validator per document. Finer granularity must be implemented more explicitly.
+  >
+  > Note that this distinction only concerns Unicode character sequences; entity includes according to section [4.4.2 Included](https://www.w3.org/TR/2006/REC-xml11-20060816/#included) are always normalized by `yolo-xml`.
+* It is **encoding-ignorant**, i.e. neither able to detect nor validate the Unicode character encoding of a document. Encoding detection, including for *each* external entity, must be performed by an upstream decoder or similar mechanism, and **a meaningful Byte Order Mark must have been consumed if present**. See appendix [E Autodetection of Character Encodings (Non-Normative)](https://www.w3.org/TR/2006/REC-xml11-20060816/#sec-guessing) and informationally [erratum E07](https://www.w3.org/XML/xml-V11-2e-errata#E07) for more information.
+  > An application using `yolo-xml` can still easily validate the encoding, as meta data like the encoding declaration is visible through its consumer API.
 
 ## Installation
 

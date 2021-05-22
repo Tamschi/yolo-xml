@@ -3,7 +3,7 @@ name = "yolo-xml"
 version = "0.0.1"
 authors = ["Tamme Schichler <tamme@schichler.dev>"]
 edition = "2018"
-description = "A (hardened, compliant, asynchronous) XML pull parser that respects your time."
+description = "A (hardened, validating, asynchronous) XML pull parser that respects your time."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Tamschi/yolo-xml"
 homepage = "https://github.com/Tamschi/yolo-xml/tree/v0.0.1"
@@ -34,3 +34,6 @@ doc-comment = "0.3.3"
 git_info = "0.1.2"
 version-sync = "0.9.1"
 wasm-bindgen-test = "0.3.23"
+
+[dependencies]
+futures-core = "0.3.15"
