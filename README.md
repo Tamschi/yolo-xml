@@ -1,26 +1,34 @@
-# TODO_CRATE_NAME
+# yolo-xml
 
-[![Lib.rs](https://img.shields.io/badge/Lib.rs-*-84f)](https://lib.rs/crates/TODO_CRATE_NAME)
-[![Crates.io](https://img.shields.io/crates/v/TODO_CRATE_NAME)](https://crates.io/crates/TODO_CRATE_NAME)
-[![Docs.rs](https://docs.rs/TODO_CRATE_NAME/badge.svg)](https://docs.rs/TODO_CRATE_NAME)
+[![Lib.rs](https://img.shields.io/badge/Lib.rs-*-84f)](https://lib.rs/crates/yolo-xml)
+[![Crates.io](https://img.shields.io/crates/v/yolo-xml)](https://crates.io/crates/yolo-xml)
+[![Docs.rs](https://docs.rs/yolo-xml/badge.svg)](https://docs.rs/yolo-xml)
 
 ![Rust 1.51](https://img.shields.io/static/v1?logo=Rust&label=&message=1.51&color=grey)
-[![CI](https://github.com/Tamschi/TODO_CRATE_NAME/workflows/CI/badge.svg?branch=develop)](https://github.com/Tamschi/TODO_CRATE_NAME/actions?query=workflow%3ACI+branch%3Adevelop)
-![Crates.io - License](https://img.shields.io/crates/l/TODO_CRATE_NAME/0.0.1)
+[![CI](https://github.com/Tamschi/yolo-xml/workflows/CI/badge.svg?branch=develop)](https://github.com/Tamschi/yolo-xml/actions?query=workflow%3ACI+branch%3Adevelop)
+![Crates.io - License](https://img.shields.io/crates/l/yolo-xml/0.0.1)
 
-[![GitHub](https://img.shields.io/static/v1?logo=GitHub&label=&message=%20&color=grey)](https://github.com/Tamschi/TODO_CRATE_NAME)
-[![open issues](https://img.shields.io/github/issues-raw/Tamschi/TODO_CRATE_NAME)](https://github.com/Tamschi/TODO_CRATE_NAME/issues)
-[![open pull requests](https://img.shields.io/github/issues-pr-raw/Tamschi/TODO_CRATE_NAME)](https://github.com/Tamschi/TODO_CRATE_NAME/pulls)
-[![crev reviews](https://web.crev.dev/rust-reviews/badge/crev_count/TODO_CRATE_NAME.svg)](https://web.crev.dev/rust-reviews/crate/TODO_CRATE_NAME/)
+[![GitHub](https://img.shields.io/static/v1?logo=GitHub&label=&message=%20&color=grey)](https://github.com/Tamschi/yolo-xml)
+[![open issues](https://img.shields.io/github/issues-raw/Tamschi/yolo-xml)](https://github.com/Tamschi/yolo-xml/issues)
+[![open pull requests](https://img.shields.io/github/issues-pr-raw/Tamschi/yolo-xml)](https://github.com/Tamschi/yolo-xml/pulls)
+[![crev reviews](https://web.crev.dev/rust-reviews/badge/crev_count/yolo-xml.svg)](https://web.crev.dev/rust-reviews/crate/yolo-xml/)
 
-TODO_README_DESCRIPTION
+An XML parser that respects your time.
+
+`yolo-xml` aims to be an easy-to-use XML parsing library that is *strictly* compliant to the XML specification and *safe* to run against potentially malicious inputs.
+
+> These go hand-in-hand; **once `yolo-xml` has been sufficiently audited**, you should be able to use `yolo-xml` as barrier against [invalid XML format confusion](https://siguza.github.io/psychicpaper/) attacks due to its strictness, for example.
+>
+> In an ideal world nearly all parsers would be strict of course, but sometimes that's just not an option for one reason or another. (It should probably be more common though.)
+
+Apart from this, the library should be usable in as many ways as possible, for example with streamed XML as used in the XMPP protocol (which is the main motivation for creating `yolo-xml`).
 
 ## Installation
 
 Please use [cargo-edit](https://crates.io/crates/cargo-edit) to always add the latest version of this library:
 
 ```cmd
-cargo add TODO_CRATE_NAME
+cargo add yolo-xml
 ```
 
 ## Example
@@ -52,7 +60,7 @@ dual licensed as above, without any additional terms or conditions.
 
 ## Versioning
 
-`TODO_CRATE_NAME` strictly follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html) with the following exceptions:
+`yolo-xml` strictly follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html) with the following exceptions:
 
 * The minor version will not reset to 0 on major version changes (except for v1).  
 Consider it the global feature level.
