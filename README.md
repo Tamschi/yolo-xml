@@ -15,7 +15,7 @@
 
 An XML parser that respects your time.
 
-`yolo-xml` aims to be an easy-to-use XML parsing library that is *strictly validating* according to the [XML specification](https://www.w3.org/XML/Core/#Publications) (version 1.1, including errata as of 2021-05) and *safe* to run against potentially malicious inputs.
+`yolo-xml` aims to be an easy-to-use XML 1.1 and optionally Namespaces in XML 1.1 parsing library that is *strictly validating* according to [the respective specifications](https://www.w3.org/XML/Core/#Publications) (each version 1.1, including errata as of 2021-05) and *safe* (also in the security sense) to run against potentially malicious inputs.
 
 > These go hand-in-hand; **once `yolo-xml` has been sufficiently audited**, you should be able to use it as barrier against [invalid XML format confusion](https://siguza.github.io/psychicpaper/) attacks due to its strictness, for example.
 >

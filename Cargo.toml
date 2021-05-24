@@ -37,3 +37,6 @@ wasm-bindgen-test = "0.3.23"
 
 [dependencies]
 futures-core = "0.3.15"
+futures-util = { version = "0.3.15", default-features = false }
+pin-project = "1.0.7"
+tap = "1.0.1"
