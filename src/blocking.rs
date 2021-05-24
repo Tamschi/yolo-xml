@@ -47,7 +47,7 @@ pub struct Input<I: Iterator<Item = Result<char, E>>, E>(I);
 impl<I: Iterator<Item = Result<char, E>>, E> Stream for Input<I, E> {
 	type Item = I::Item;
 
-	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+	fn poll_next(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
 		self.0.next().pipe(Poll::Ready)
 	}
 }
