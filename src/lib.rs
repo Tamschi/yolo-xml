@@ -9,6 +9,7 @@ use peek_stream::PeekStream;
 use tap::Pipe as _;
 
 pub mod blocking;
+pub mod lenses;
 mod peek_stream;
 
 #[cfg(doctest)]
@@ -38,29 +39,50 @@ fn fake_discard_callback<'a, T, E>() -> &'a mut dyn FnMut(T) -> Result<(), E> {
 	extend_zst_reference_mut(discard)
 }
 
-async fn skip_whitespace<Input: Stream<Item = Result<char, E>>, E, const CAPACITY: usize>(
-	mut input: Pin<&mut PeekStream<Input, CAPACITY>>,
-) -> Result<(), E> {
-	while input
-		.as_mut()
-		.next_if(|next| match next {
-			Ok(char) => "\u{20}\u{9}\u{D}\u{A}".contains(*char), // [3] S
-			Err(_) => true,
-		})
-		.await
-		.transpose()?
-		.is_some()
-	{}
-	Ok(())
-}
+// async fn skip_whitespace<Input: Stream<Item = Result<char, E>>, E, const CAPACITY: usize>(
+// 	mut input: Pin<&mut PeekStream<Input, CAPACITY>>,
+// ) -> Result<(), E> {
+// 	while input
+// 		.as_mut()
+// 		.next_if(|next| match next {
+// 			Ok(char) => "\u{20}\u{9}\u{D}\u{A}".contains(*char), // [3] S
+// 			Err(_) => true,
+// 		})
+// 		.await
+// 		.transpose()?
+// 		.is_some()
+// 	{}
+// 	Ok(())
+// }
+
+// pub type UnicodeNormalizer<'a, E> = dyn MutLenseMut<
+// 	'a,
+// 	dyn 'a + Stream<Item = Result<char, E>>,
+// 	Output = dyn 'a + Stream<Item = Result<char, E>>,
+// >;
+
+struct NoNormalization;
+// impl<'a, E: 'a> MutLenseMut<'a, dyn 'a + Stream<Item = Result<char, E>>> for NoNormalization {
+// 	type Output = dyn 'a + Stream<Item = Result<char, E>>;
+
+// 	fn lense<'b>(
+// 		&'a mut self,
+// 		args: &'b mut (dyn 'a + Stream<Item = Result<char, E>>),
+// 	) -> &'b mut Self::Output {
+// 		let _ = self;
+// 		args
+// 	}
+// }
 
 pub struct XmlParserOptions<'a, E: 'a> {
 	on_mode: &'a mut dyn FnMut(Mode) -> Result<(), E>,
+	// unicode_normalizer: &'a mut UnicodeNormalizer<'a, E>,
 }
 impl<'a, E: 'a> Default for XmlParserOptions<'a, E> {
 	fn default() -> Self {
 		Self {
 			on_mode: fake_discard_callback(),
+			// unicode_normalizer: extend_zst_reference_mut::<NoNormalization>(&mut NoNormalization),
 		}
 	}
 }

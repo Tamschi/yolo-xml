@@ -1,15 +1,19 @@
 use core::{
 	convert::TryFrom,
+	future::Future,
 	mem::MaybeUninit,
 	num::NonZeroUsize,
 	ops::{Add, AddAssign, Sub},
 	pin::Pin,
 	task::{Context, Poll},
 };
+use ergo_pin::ergo_pin;
 use futures_core::Stream;
 use futures_util::StreamExt as _;
 use pin_project::pin_project;
 use tap::{Conv as _, Pipe as _};
+
+use crate::lenses::PinLensMut;
 
 // A neat generic implementation isn't yet possible because types of const generic parameters can't depend on other type parameters yet.
 // TODO: Check maths terms.
@@ -144,11 +148,14 @@ impl<Input: Stream, const CAPACITY: usize> PeekStream<Input, CAPACITY> {
 		})
 	}
 
+	#[ergo_pin]
 	pub async fn next_if(
 		mut self: Pin<&mut Self>,
-		predicate: impl FnOnce(&Input::Item) -> bool,
+		predicate: impl PinLensMut<fn(&Input::Item) -> Pin<&mut dyn Future<Output = bool>>>,
 	) -> Option<Input::Item> {
-		if predicate(self.as_mut().peek_1().await?) {
+		let item = self.as_mut().peek_1().await?;
+		let condition = pin!(predicate).lense()(item).await;
+		if condition {
 			self.next().await
 		} else {
 			None
