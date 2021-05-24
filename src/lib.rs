@@ -3,13 +3,11 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::if_not_else)]
 
-use core::{
-	future::Future, intrinsics::transmute, marker::PhantomData, mem::size_of_val, pin::Pin,
-};
+use core::{future::Future, marker::PhantomData, mem::size_of_val, pin::Pin};
 use futures_core::Stream;
 use peek_stream::PeekStream;
 use tap::Pipe as _;
-
+pub mod blocking;
 mod peek_stream;
 
 #[cfg(doctest)]
@@ -33,9 +31,9 @@ fn extend_zst_reference_mut<'a, T: ?Sized>(reference: &mut T) -> &'a mut T {
 	}
 }
 
-fn fake_discard_callback<'a, T, E>() -> &'a mut (dyn Send + FnMut(T) -> Result<(), E>) {
+fn fake_discard_callback<'a, T, E>() -> &'a mut dyn FnMut(T) -> Result<(), E> {
 	let mut discard = |_| Ok(());
-	let discard: &mut (dyn Send + FnMut(T) -> Result<(), E>) = &mut discard;
+	let discard: &mut dyn FnMut(T) -> Result<(), E> = &mut discard;
 	extend_zst_reference_mut(discard)
 }
 
@@ -56,7 +54,7 @@ async fn skip_whitespace<Input: Stream<Item = Result<char, E>>, E, const CAPACIT
 }
 
 pub struct XmlParserOptions<'a, E: 'a> {
-	on_mode: &'a mut (dyn Send + FnMut(Mode) -> Result<(), E>),
+	on_mode: &'a mut dyn FnMut(Mode) -> Result<(), E>,
 }
 impl<'a, E: 'a> Default for XmlParserOptions<'a, E> {
 	fn default() -> Self {
@@ -67,15 +65,15 @@ impl<'a, E: 'a> Default for XmlParserOptions<'a, E> {
 }
 
 pub struct XmlParser<'a, E> {
-	input: &'a mut (dyn Send + Stream<Item = Result<char, E>>),
+	input: &'a mut dyn Stream<Item = Result<char, E>>,
 	mode: Mode,
 	phantom: PhantomData<E>,
 }
 impl<'a, E> XmlParser<'a, E> {
 	pub fn start(
-		input: &'a mut (dyn Send + Stream<Item = Result<char, E>>),
+		input: &'a mut dyn Stream<Item = Result<char, E>>,
 		options: XmlParserOptions<'a, E>,
-	) -> impl 'a + Send + Future<Output = Result<XmlParser<'a, E>, E>> {
+	) -> impl 'a + Future<Output = Result<XmlParser<'a, E>, E>> {
 		async move {
 			Self {
 				input,

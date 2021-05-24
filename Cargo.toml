@@ -36,6 +36,7 @@ version-sync = "0.9.1"
 wasm-bindgen-test = "0.3.23"
 
 [dependencies]
+ergo-pin = "=0.1.0" # Patches may require newer compiler versions.
 futures-core = "0.3.15"
 futures-util = { version = "0.3.15", default-features = false }
 pin-project = "1.0.7"
