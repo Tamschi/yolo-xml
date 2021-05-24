@@ -95,16 +95,17 @@ pub struct PeekStream<Input: Stream, const CAPACITY: usize> {
 	input: Input,
 	buffer: [MaybeUninit<Input::Item>; CAPACITY],
 	start: Modular<CAPACITY>,
-	end: Modular<CAPACITY>,
+	len: usize,
 }
 impl<Input: Stream, const CAPACITY: usize> Stream for PeekStream<Input, CAPACITY> {
 	type Item = Input::Item;
 
 	fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
 		let this = self.project();
-		if this.start != this.end {
+		if *this.len > 0 {
 			let i: usize = this.start.into();
 			*this.start += 1;
+			*this.len -= 1;
 			unsafe { this.buffer[i].as_ptr().read() }
 				.pipe(Some)
 				.pipe(Poll::Ready)
@@ -116,8 +117,8 @@ impl<Input: Stream, const CAPACITY: usize> Stream for PeekStream<Input, CAPACITY
 	fn size_hint(&self) -> (usize, Option<usize>) {
 		let (start, end) = self.input.size_hint();
 		(
-			start + (self.end - self.start),
-			end.and_then(|end| end.checked_add(self.end - self.start)),
+			start + self.len,
+			end.and_then(|end| end.checked_add(self.len)),
 		)
 	}
 }
@@ -132,9 +133,10 @@ impl<Input: Stream, const CAPACITY: usize> PeekStream<Input, CAPACITY> {
 			"`depth` out of range `0..CAPACITY`"
 		);
 		let mut this = self.project();
-		while this.end != this.start && *this.end - *this.start < depth.get() {
-			this.buffer[this.end.conv::<usize>()] = this.input.next().await?.pipe(MaybeUninit::new);
-			*this.end += 1;
+		while *this.len < depth.get() {
+			this.buffer[(*this.start + *this.len).conv::<usize>()] =
+				this.input.next().await?.pipe(MaybeUninit::new);
+			*this.len += 1;
 		}
 		Some(unsafe {
 			// Safety: Assuredly written to directly above or earlier than that.
