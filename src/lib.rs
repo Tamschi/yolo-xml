@@ -17,6 +17,8 @@ pub mod readme {
 	doc_comment::doctest!("../README.md");
 }
 
+// Grammar definitions are referenced by comments of the form `// [n] name`.
+
 pub enum Mode {
 	Xml1_0,
 	Xml1_1,
@@ -39,14 +41,11 @@ fn fake_discard_callback<'a, T, E>() -> &'a mut (dyn Send + FnMut(T) -> Result<(
 
 async fn skip_whitespace<Input: Stream<Item = Result<char, E>>, E, const CAPACITY: usize>(
 	mut input: Pin<&mut PeekStream<Input, CAPACITY>>,
-) -> Result<(), E>
-where
-	E: Clone,
-{
+) -> Result<(), E> {
 	while input
 		.as_mut()
 		.next_if(|next| match next {
-			Ok(char) => "TODO".contains(*char),
+			Ok(char) => "\u{20}\u{9}\u{D}\u{A}".contains(*char), // [3] S
 			Err(_) => true,
 		})
 		.await
