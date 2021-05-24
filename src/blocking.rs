@@ -3,13 +3,11 @@ use core::{
 	pin::Pin,
 	task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
 };
-use ergo_pin::ergo_pin;
 use futures_core::{Future, Stream};
 use pin_project::pin_project;
 use tap::Pipe;
 
-#[ergo_pin]
-fn eval<O>(future: impl Future<Output = O>) -> O {
+fn eval<O>(mut future: impl Future<Output = O>) -> O {
 	const INSOMNIA: RawWakerVTable = RawWakerVTable::new(
 		|_| unreachable!(),
 		|_| unreachable!(),
@@ -18,8 +16,11 @@ fn eval<O>(future: impl Future<Output = O>) -> O {
 	);
 
 	unsafe {
+		// SAFETY:
+		// `INSOMNIA` never actually uses the `data` pointer, so it is sound.
+		// The `future` is dropped right after polling it once, so there's no opportunity to move it.
 		let waker = Waker::from_raw(RawWaker::new(&() as *const _, &INSOMNIA));
-		match pin!(future).poll(&mut Context::from_waker(&waker)) {
+		match Pin::new_unchecked(&mut future).poll(&mut Context::from_waker(&waker)) {
 			Poll::Ready(output) => output,
 			Poll::Pending => unreachable!(),
 		}
