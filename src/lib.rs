@@ -9,6 +9,7 @@ use peek_stream::PeekStream;
 use tap::Pipe as _;
 
 pub mod blocking;
+pub mod utils;
 mod peek_stream;
 
 #[cfg(doctest)]
