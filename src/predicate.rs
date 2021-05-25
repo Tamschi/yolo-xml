@@ -8,18 +8,28 @@ pub trait Predicate<T> {
 	fn test<'a>(self: Pin<&'a mut Self>, value: &'a T) -> Pin<&'a mut dyn Future<Output = bool>>;
 }
 
+#[allow(clippy::module_name_repetitions)]
 pub trait IntoPredicate<T>: Sized {
-	type Target: Predicate<T>;
-	fn into_predicate(self) -> Self::Target;
+	type IntoPredicate: Predicate<T>;
+	fn into_predicate(self) -> Self::IntoPredicate;
 }
 
 #[pin_project]
-pub struct BlockingPredicate<P> {
+pub struct Blocking<P> {
 	predicate: P,
 	future: Option<Ready<bool>>,
 }
+impl<P, T> IntoPredicate<T> for Blocking<P>
+where
+	P: FnMut(&T) -> bool,
+{
+	type IntoPredicate = Self;
+	fn into_predicate(self) -> Self::IntoPredicate {
+		self
+	}
+}
 
-impl<T, P> Predicate<T> for BlockingPredicate<P>
+impl<T, P> Predicate<T> for Blocking<P>
 where
 	P: FnMut(&T) -> bool,
 {
@@ -39,11 +49,11 @@ unsafe fn extend_reference_mut<T>(reference: &mut T) -> &'static mut T {
 	&mut *(reference as *mut _)
 }
 
-pub fn from_blocking<P, T>(predicate: P) -> BlockingPredicate<P>
+pub fn from_blocking<P, T>(predicate: P) -> Blocking<P>
 where
 	P: FnMut(&T) -> bool,
 {
-	BlockingPredicate {
+	Blocking {
 		predicate,
 		future: None,
 	}
@@ -53,8 +63,8 @@ impl<P, T> IntoPredicate<T> for P
 where
 	P: FnMut(&T) -> bool,
 {
-	type Target = BlockingPredicate<P>;
-	fn into_predicate(self) -> Self::Target {
+	type IntoPredicate = Blocking<P>;
+	fn into_predicate(self) -> Self::IntoPredicate {
 		from_blocking(self)
 	}
 }
