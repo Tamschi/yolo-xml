@@ -2,6 +2,7 @@ use core::{
 	cell::UnsafeCell,
 	future::Future,
 	intrinsics::transmute,
+	marker::PhantomPinned,
 	ops::{Deref, DerefMut},
 	pin::Pin,
 	ptr::NonNull,
@@ -89,6 +90,7 @@ where
 	param: Option<NonNull<T>>,
 	/// Please audit: Is this enough or do I need an atomic here wrt. weaker memory ordering on ARM-based systems?
 	result: UnsafeCell<Option<bool>>,
+	_pin: PhantomPinned,
 }
 unsafe impl<P, T: ?Sized> Send for Blocking<P, T>
 where
@@ -190,6 +192,7 @@ where
 		predicate: predicate.into(),
 		param: None,
 		result: None.into(),
+		_pin: PhantomPinned,
 	}
 }
 
