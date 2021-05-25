@@ -8,6 +8,7 @@ use core::{
 	ptr::NonNull,
 	task::{Context, Poll},
 };
+use futures_core::Stream;
 use pin_project::pin_project;
 use tap::Pipe;
 
@@ -31,6 +32,7 @@ pub struct PinHandle<'a, T: ?Sized> {
 	pin: Pin<&'a mut T>,
 	on_drop: Option<RunOnce<'a, dyn 'a + Runnable<(), ()>>>,
 }
+
 impl<'a, T: ?Sized> PinHandle<'a, T> {
 	#[must_use]
 	pub fn new(
@@ -40,6 +42,7 @@ impl<'a, T: ?Sized> PinHandle<'a, T> {
 		Self { pin, on_drop }
 	}
 }
+
 impl<'a, T: ?Sized> Deref for PinHandle<'a, T> {
 	type Target = Pin<&'a mut T>;
 	fn deref(&self) -> &Self::Target {
@@ -51,11 +54,13 @@ impl<'a, T: ?Sized> DerefMut for PinHandle<'a, T> {
 		&mut self.pin
 	}
 }
+
 impl<'a, T: ?Sized> Drop for PinHandle<'a, T> {
 	fn drop(&mut self) {
 		self.on_drop.take().map(RunOnce::run).unwrap_or_default()
 	}
 }
+
 impl<'a, T: ?Sized> Future for PinHandle<'a, T>
 where
 	T: Future,
@@ -64,6 +69,21 @@ where
 
 	fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
 		self.pin.as_mut().poll(cx)
+	}
+}
+
+impl<'a, T: ?Sized> Stream for PinHandle<'a, T>
+where
+	T: Stream,
+{
+	type Item = T::Item;
+
+	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+		self.pin.as_mut().poll_next(cx)
+	}
+
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		self.pin.size_hint()
 	}
 }
 

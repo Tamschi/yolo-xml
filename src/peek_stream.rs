@@ -1,9 +1,8 @@
 use core::{
 	convert::TryFrom,
-	future::Future,
 	mem::MaybeUninit,
 	num::NonZeroUsize,
-	ops::{Add, AddAssign, DerefMut, Sub},
+	ops::{Add, AddAssign, Sub},
 	pin::Pin,
 	task::{Context, Poll},
 };
