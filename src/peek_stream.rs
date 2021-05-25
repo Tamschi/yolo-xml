@@ -13,7 +13,7 @@ use futures_util::StreamExt as _;
 use pin_project::pin_project;
 use tap::{Conv as _, Pipe as _};
 
-use crate::utils::Predicate;
+use crate::predicate::{IntoPredicate, Predicate};
 
 // A neat generic implementation isn't yet possible because types of const generic parameters can't depend on other type parameters yet.
 // TODO: Check maths terms.
@@ -151,10 +151,10 @@ impl<Input: Stream, const CAPACITY: usize> PeekStream<Input, CAPACITY> {
 	#[ergo_pin]
 	pub async fn next_if(
 		mut self: Pin<&mut Self>,
-		predicate: impl Predicate<Input::Item>,
+		predicate: impl IntoPredicate<Input::Item>,
 	) -> Option<Input::Item> {
 		let item = self.as_mut().peek_1().await?;
-		if pin!(predicate).test(item).await {
+		if pin!(predicate.into_predicate()).test(item).await {
 			self.next().await
 		} else {
 			None

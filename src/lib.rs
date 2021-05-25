@@ -10,7 +10,7 @@ use tap::Pipe as _;
 
 pub mod blocking;
 mod peek_stream;
-pub mod utils;
+pub mod predicate;
 
 #[cfg(doctest)]
 pub mod readme {
@@ -39,21 +39,22 @@ fn fake_discard_callback<'a, T, E>() -> &'a mut dyn FnMut(T) -> Result<(), E> {
 	extend_zst_reference_mut(discard)
 }
 
-// async fn skip_whitespace<Input: Stream<Item = Result<char, E>>, E, const CAPACITY: usize>(
-// 	mut input: Pin<&mut PeekStream<Input, CAPACITY>>,
-// ) -> Result<(), E> {
-// 	while input
-// 		.as_mut()
-// 		.next_if(|next| match next {
-// 			Ok(char) => "\u{20}\u{9}\u{D}\u{A}".contains(*char), // [3] S
-// 			Err(_) => true,
-// 		})
-// 		.await
-// 		.transpose()?
-// 		.is_some()
-// 	{}
-// 	Ok(())
-// }
+/// [3] S
+async fn skip_whitespace<Input: Stream<Item = Result<char, E>>, E, const CAPACITY: usize>(
+	mut input: Pin<&mut PeekStream<Input, CAPACITY>>,
+) -> Result<(), E> {
+	while input
+		.as_mut()
+		.next_if(|next: &Result<char, _>| match next {
+			Ok(char) => "\u{20}\u{9}\u{D}\u{A}".contains(*char),
+			Err(_) => true,
+		})
+		.await
+		.transpose()?
+		.is_some()
+	{}
+	Ok(())
+}
 
 // pub type UnicodeNormalizer<'a, E> = dyn MutLenseMut<
 // 	'a,
