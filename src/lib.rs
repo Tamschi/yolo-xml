@@ -1,7 +1,7 @@
 #![doc(html_root_url = "https://docs.rs/yolo-xml/0.0.1")]
 #![no_std]
 #![warn(clippy::pedantic)]
-#![allow(clippy::if_not_else)]
+#![allow(clippy::if_not_else, clippy::single_match_else)]
 
 use core::{future::Future, marker::PhantomData, mem::size_of_val, pin::Pin};
 use futures_core::Stream;
