@@ -3,6 +3,8 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::if_not_else, clippy::single_match_else)]
 
+extern crate alloc;
+
 use core::{future::Future, marker::PhantomData, mem::size_of_val, pin::Pin};
 use futures_core::Stream;
 use peek_stream::PeekStream;
@@ -15,6 +17,8 @@ mod peek_stream;
 pub mod predicate;
 
 mod xml_element;
+
+pub struct Error();
 
 #[cfg(doctest)]
 pub mod readme {
