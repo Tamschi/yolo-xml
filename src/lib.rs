@@ -8,9 +8,13 @@ use futures_core::Stream;
 use peek_stream::PeekStream;
 use tap::Pipe as _;
 
+const PEEK: usize = 0;
+
 pub mod blocking;
 mod peek_stream;
 pub mod predicate;
+
+mod xml_element;
 
 #[cfg(doctest)]
 pub mod readme {
@@ -111,4 +115,11 @@ impl<'a, E> XmlParser<'a, E> {
 
 pub struct XmlWithNamespacesParser<'a, E> {
 	input: &'a mut XmlParser<'a, E>,
+}
+
+#[derive(PartialEq)]
+enum ItemState {
+	Ready,
+	Dirty,
+	Finished,
 }
