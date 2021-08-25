@@ -17,8 +17,9 @@ mod peek_stream;
 pub mod predicate;
 
 mod xml_element;
+mod xml_name;
 
-pub struct Error();
+pub struct Error;
 
 #[cfg(doctest)]
 pub mod readme {

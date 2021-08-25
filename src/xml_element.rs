@@ -1,5 +1,5 @@
-use crate::{peek_stream::PeekStream, Error, ItemState, PEEK};
-use alloc::boxed::Box;
+use crate::{peek_stream::PeekStream, xml_name::XmlName, Error, ItemState, PEEK};
+use alloc::{boxed::Box, string::String};
 use core::{cell::UnsafeCell, pin::Pin, ptr::NonNull};
 use futures_core::{Future, TryStream};
 use tap::{Pipe, Tap};
@@ -7,6 +7,8 @@ use tap::{Pipe, Tap};
 pub struct XmlElement<'a, Input: TryStream<Item = u8>> {
 	parent: Option<&'a XmlElement<'a, Input>>,
 	guts: UnsafeCell<Guts<Input>>,
+	tag_name: XmlName,
+	attributes: alloc::collections::BTreeMap<XmlName, String>,
 }
 
 pub struct XmlElementChildren<'a, Input: TryStream<Item = u8>>(
@@ -34,20 +36,6 @@ impl<Input: TryStream<Item = u8>> Guts<Input> {
 	}
 }
 
-impl<Input: TryStream<Item = u8>> Drop for Guts<Input> {
-	fn drop(&mut self) {
-		match self.state {
-			ItemState::Dirty => (),
-			ItemState::Finished => {
-				if let Some(parent) = unsafe { self.parent.as_mut() } {
-					parent.state = ItemState::Ready;
-				}
-			}
-			ItemState::Ready => todo!(),
-		}
-	}
-}
-
 impl<'a, Input: TryStream<Item = u8>> XmlElement<'a, Input> {
 	pub fn next_child(
 		&mut self,
@@ -69,6 +57,11 @@ impl<'a, Input: TryStream<Item = u8>> XmlElement<'a, Input> {
 			let recursive: Pin<Box<dyn Future<Output = _>>> = Box::pin(child.finish());
 			recursive.await?;
 		}
+		todo!("parse end tag");
+		let guts = self.guts.get_mut();
+		if let Some(parent) = unsafe { guts.parent.as_mut() } {
+			parent.state = ItemState::Ready;
+		}
 		Ok(())
 	}
 }
@@ -88,7 +81,9 @@ impl<Input: TryStream<Item = u8>> Guts<Input> {
 	) -> Result<Option<XmlElement<'_, Input>>, Error> {
 		match self.state {
 			ItemState::Finished => None,
-			ItemState::Dirty => panic!(todo!()),
+			ItemState::Dirty => {
+				panic!("Element is dirty. `.finish().await?` all children before continuing.")
+			}
 			ItemState::Ready => Some(todo!()),
 		}
 		.pipe(Ok)
