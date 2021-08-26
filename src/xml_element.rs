@@ -12,10 +12,10 @@ pub struct XmlElement<'a, Input: TryStream<Item = u8>> {
 	attributes: alloc::collections::BTreeMap<XmlName, String>,
 }
 
-pub struct XmlElementChildren<'a, Input: TryStream<Item = u8>>(
-	&'a XmlElement<'a, Input>,
-	&'a mut Guts<Input>,
-);
+pub struct XmlElementChildren<'a, Input: TryStream<Item = u8>> {
+	parent: &'a XmlElement<'a, Input>,
+	guts: &'a mut Guts<Input>,
+}
 
 struct Guts<Input: TryStream<Item = u8>> {
 	parent: *mut Guts<Input>,
@@ -50,7 +50,10 @@ impl<'a, Input: TryStream<Item = u8>> XmlElement<'a, Input> {
 	) -> (&'_ XmlElement<'a, Input>, XmlElementChildren<'_, Input>) {
 		(
 			self,
-			XmlElementChildren(self, self.guts.get().pipe(|guts| unsafe { &mut *guts })),
+			XmlElementChildren {
+				parent: self,
+				guts: self.guts.get().pipe(|guts| unsafe { &mut *guts }),
+			},
 		)
 	}
 
@@ -72,7 +75,7 @@ impl<'a, Input: TryStream<Item = u8>> XmlElement<'a, Input> {
 impl<'a, Input: TryStream<Item = u8>> XmlElementChildren<'a, Input> {
 	#[instrument(skip(self))]
 	pub async fn next_child(&mut self) -> Result<Option<XmlElement<'_, Input>>, Error> {
-		self.1.next_child(self.0).await
+		self.guts.next_child(self.parent).await
 	}
 }
 

@@ -29,7 +29,7 @@ pub mod predicate;
 mod xml_element;
 mod xml_name;
 
-pub use xml_element::XmlElement;
+pub use xml_element::{XmlElement, XmlElementChildren};
 
 pub struct Error;
 
