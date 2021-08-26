@@ -28,6 +28,9 @@ is-it-maintained-issue-resolution = { repository = "Tamschi/yolo-xml" }
 is-it-maintained-open-issues = { repository = "Tamschi/yolo-xml" }
 maintenance = { status = "experimental" }
 
+[features]
+std = [] # Implements `std::error::Error` for `Error`.
+
 [dependencies]
 ergo-pin = "0.1.0" # Patches may require newer compiler versions.
 futures-core = { version = "0.3.16", default-features = false, features = ["alloc"] }

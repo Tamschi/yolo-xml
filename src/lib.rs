@@ -5,6 +5,9 @@
 
 extern crate alloc;
 
+#[cfg(feature = "std")]
+extern crate std;
+
 use core::{
 	fmt::{self, Debug, Display, Formatter},
 	future::Future,
@@ -40,6 +43,9 @@ impl Display for Error {
 		f.write_str("Error deserializing XML. Check `tracing` logs for more information!")
 	}
 }
+
+#[cfg(feature = "std")]
+impl std::error::Error for Error {}
 
 #[cfg(doctest)]
 pub mod readme {
