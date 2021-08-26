@@ -5,7 +5,14 @@
 
 extern crate alloc;
 
-use core::{future::Future, marker::PhantomData, mem::size_of_val, pin::Pin};
+use core::{
+	fmt::{self, Debug, Display, Formatter},
+	future::Future,
+	marker::PhantomData,
+	mem::size_of_val,
+	pin::Pin,
+	result::Result,
+};
 use futures_core::Stream;
 use peek_stream::PeekStream;
 use tap::Pipe as _;
@@ -19,7 +26,20 @@ pub mod predicate;
 mod xml_element;
 mod xml_name;
 
+pub use xml_element::XmlElement;
+
 pub struct Error;
+
+impl Debug for Error {
+	fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+		Display::fmt(self, f)
+	}
+}
+impl Display for Error {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		f.write_str("Error deserializing XML. Check `tracing` logs for more information!")
+	}
+}
 
 #[cfg(doctest)]
 pub mod readme {

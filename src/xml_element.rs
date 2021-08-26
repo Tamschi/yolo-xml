@@ -3,6 +3,7 @@ use alloc::{boxed::Box, string::String};
 use core::{cell::UnsafeCell, pin::Pin, ptr::NonNull};
 use futures_core::{Future, TryStream};
 use tap::{Pipe, Tap};
+use tracing::instrument;
 
 pub struct XmlElement<'a, Input: TryStream<Item = u8>> {
 	parent: Option<&'a XmlElement<'a, Input>>,
@@ -23,6 +24,7 @@ struct Guts<Input: TryStream<Item = u8>> {
 }
 
 impl<Input: TryStream<Item = u8>> Guts<Input> {
+	#[instrument(skip(input))]
 	unsafe fn new(input: NonNull<PeekStream<Input, PEEK>>, parent: *mut Guts<Input>) -> Self {
 		Self {
 			parent: parent.tap(|parent| {
@@ -37,12 +39,12 @@ impl<Input: TryStream<Item = u8>> Guts<Input> {
 }
 
 impl<'a, Input: TryStream<Item = u8>> XmlElement<'a, Input> {
-	pub fn next_child(
-		&mut self,
-	) -> impl '_ + Future<Output = Result<Option<XmlElement<'_, Input>>, Error>> {
-		unsafe { &mut *self.guts.get() }.next_child(self)
+	#[instrument(skip(self))]
+	pub async fn next_child(&mut self) -> Result<Option<XmlElement<'_, Input>>, Error> {
+		unsafe { &mut *self.guts.get() }.next_child(self).await
 	}
 
+	#[instrument(skip(self))]
 	pub fn remaining_children_by_ref(
 		&mut self,
 	) -> (&'_ XmlElement<'a, Input>, XmlElementChildren<'_, Input>) {
@@ -52,6 +54,7 @@ impl<'a, Input: TryStream<Item = u8>> XmlElement<'a, Input> {
 		)
 	}
 
+	#[instrument(skip(self))]
 	pub async fn finish(&mut self) -> Result<(), Error> {
 		while let Some(mut child) = self.next_child().await? {
 			let recursive: Pin<Box<dyn Future<Output = _>>> = Box::pin(child.finish());
@@ -67,14 +70,14 @@ impl<'a, Input: TryStream<Item = u8>> XmlElement<'a, Input> {
 }
 
 impl<'a, Input: TryStream<Item = u8>> XmlElementChildren<'a, Input> {
-	pub fn next_child(
-		&mut self,
-	) -> impl '_ + Future<Output = Result<Option<XmlElement<'_, Input>>, Error>> {
-		self.1.next_child(self.0)
+	#[instrument(skip(self))]
+	pub async fn next_child(&mut self) -> Result<Option<XmlElement<'_, Input>>, Error> {
+		self.1.next_child(self.0).await
 	}
 }
 
 impl<Input: TryStream<Item = u8>> Guts<Input> {
+	#[instrument(skip(self, owner))]
 	async fn next_child(
 		&mut self,
 		owner: &XmlElement<'_, Input>,
@@ -82,7 +85,7 @@ impl<Input: TryStream<Item = u8>> Guts<Input> {
 		match self.state {
 			ItemState::Finished => None,
 			ItemState::Dirty => {
-				panic!("Element is dirty. `.finish().await?` all children before continuing.")
+				panic!("Element is dirty. `.finish().await?` each child before continuing.")
 			}
 			ItemState::Ready => Some(todo!()),
 		}
