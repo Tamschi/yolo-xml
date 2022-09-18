@@ -10,6 +10,7 @@
 	clippy::if_not_else,
 	clippy::single_match_else
 )]
+#![allow(missing_docs)]
 
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
