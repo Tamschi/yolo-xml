@@ -17,8 +17,10 @@ include = [
 	"Cargo.toml",
 	"CHANGELOG.md",
 	"CODE_OF_CONDUCT.md",
+	"COPYRIGHT.md",
 	"LICENSE-*",
 	"README.md",
+	"SECURITY.md",
 ]
 resolver = "2"
 publish = false
@@ -26,7 +28,7 @@ publish = false
 [badges]
 is-it-maintained-issue-resolution = { repository = "Tamschi/yolo-xml" }
 is-it-maintained-open-issues = { repository = "Tamschi/yolo-xml" }
-maintenance = { status = "experimental" }
+maintenance = { status = "experimental" } # This may differ between branches.
 
 [features]
 std = [] # Implements `std::error::Error` for `Error`.
@@ -41,7 +43,6 @@ tracing = { version = "0.1.26", default-features = false, features = ["attribute
 
 [dev-dependencies]
 cargo-husky = "1.5.0"
-doc-comment = "0.3.3"
 git_info = "0.1.2"
-version-sync = "0.9.1"
-wasm-bindgen-test = "0.3.23"
+version-sync = "0.9.3"
+wasm-bindgen-test = "0.3.28"
