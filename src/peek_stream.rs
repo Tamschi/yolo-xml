@@ -1,3 +1,4 @@
+use alloc::borrow::ToOwned;
 use core::{
 	convert::TryFrom,
 	mem::MaybeUninit,
@@ -7,12 +8,13 @@ use core::{
 	task::{Context, Poll},
 };
 use ergo_pin::ergo_pin;
-use futures_core::Stream;
-use futures_util::StreamExt as _;
 use pin_project::pin_project;
 use tap::{Conv as _, Pipe as _};
 
-use crate::predicate::{IntoPredicate, Predicate};
+use crate::{
+	iter::AsyncIterator,
+	predicate::{IntoPredicate, Predicate},
+};
 
 // A neat generic implementation isn't yet possible because types of const generic parameters can't depend on other type parameters yet.
 // TODO: Check maths terms.
@@ -93,17 +95,29 @@ impl<const MODULE: usize> AddAssign<usize> for Modular<MODULE> {
 }
 
 #[pin_project]
-pub struct PeekStream<Input: Stream, const CAPACITY: usize> {
+pub struct PeekStream<'a, Input: 'a + AsyncIterator, const CAPACITY: usize>
+where
+	for<'b> Input::Item<'b>: ToOwned,
+	for<'b> <Input::Item<'b> as ToOwned>::Owned: 'a,
+{
 	#[pin]
 	input: Input,
-	buffer: [MaybeUninit<Input::Item>; CAPACITY],
+	buffer: [MaybeUninit<<Input::Item<'a> as ToOwned>::Owned>; CAPACITY],
 	start: Modular<CAPACITY>,
 	len: usize,
 }
-impl<Input: Stream, const CAPACITY: usize> Stream for PeekStream<Input, CAPACITY> {
-	type Item = Input::Item;
+impl<'a, Input: 'a + AsyncIterator, const CAPACITY: usize> AsyncIterator
+	for PeekStream<'a, Input, CAPACITY>
+where
+	for<'b> Input::Item<'b>: ToOwned,
+	for<'b> <Input::Item<'b> as ToOwned>::Owned: 'a,
+{
+	type Item<'b> = &'b <Input::Item<'a> as ToOwned>::Owned where 'a: 'b;
 
-	fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+	fn poll_next<'b>(
+		self: Pin<&'b mut Self>,
+		cx: &mut Context<'_>,
+	) -> Poll<Option<Self::Item<'b>>> {
 		let this = self.project();
 		if *this.len > 0 {
 			let i: usize = this.start.into();
@@ -125,7 +139,11 @@ impl<Input: Stream, const CAPACITY: usize> Stream for PeekStream<Input, CAPACITY
 		)
 	}
 }
-impl<Input: Stream, const CAPACITY: usize> PeekStream<Input, CAPACITY> {
+impl<'a, Input: 'a + AsyncIterator, const CAPACITY: usize> PeekStream<'a, Input, CAPACITY>
+where
+	for<'b> Input::Item<'b>: ToOwned,
+	for<'b> <Input::Item<'b> as ToOwned>::Owned: 'a,
+{
 	pub async fn peek_1(self: Pin<&mut Self>) -> Option<&Input::Item> {
 		self.peek_n(NonZeroUsize::new(1).unwrap()).await
 	}
@@ -150,7 +168,7 @@ impl<Input: Stream, const CAPACITY: usize> PeekStream<Input, CAPACITY> {
 	#[ergo_pin]
 	pub async fn next_if(
 		mut self: Pin<&mut Self>,
-		predicate: impl IntoPredicate<Input::Item>,
+		predicate: impl for<'b> IntoPredicate<Input::Item<'b>>,
 	) -> Option<Input::Item> {
 		let item = self.as_mut().peek_1().await?;
 		if pin!(predicate.into_predicate()).test(item).await {

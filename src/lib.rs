@@ -30,8 +30,11 @@ use core::{
 	result::Result,
 };
 use futures_core::Stream;
+use iter::AsyncIterator;
 use peek_stream::PeekStream;
 use tap::Pipe as _;
+
+mod iter;
 
 /// Peek buffer size for the longest token I need to branch on.
 ///
@@ -86,8 +89,13 @@ fn fake_discard_callback<'a, T, E>() -> &'a mut dyn FnMut(T) -> Result<(), E> {
 }
 
 /// [3] S
-async fn skip_whitespace<Input: Stream<Item = Result<char, E>>, E, const CAPACITY: usize>(
-	mut input: Pin<&mut PeekStream<Input, CAPACITY>>,
+async fn skip_whitespace<
+	'a,
+	Input: AsyncIterator<Item<'a> = Result<char, E>>,
+	E: Clone,
+	const CAPACITY: usize,
+>(
+	mut input: Pin<&mut PeekStream<'_, Input, CAPACITY>>,
 ) -> Result<(), E> {
 	while input
 		.as_mut()

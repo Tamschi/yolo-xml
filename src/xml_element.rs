@@ -1,31 +1,36 @@
-use crate::{peek_stream::PeekStream, xml_name::XmlName, Error, ItemState, PEEK};
+use crate::{
+	iter::AsyncIterator, peek_stream::PeekStream, xml_name::XmlName, Error, ItemState, PEEK,
+};
 use alloc::{boxed::Box, string::String};
 use core::{cell::UnsafeCell, pin::Pin, ptr::NonNull};
-use futures_core::{Future, TryStream};
+use futures_core::Future;
 use tap::{Pipe, Tap};
 use tracing::instrument;
 
-pub struct XmlElement<'a, Input: TryStream<Item = u8>> {
-	parent: Option<&'a XmlElement<'a, Input>>,
-	guts: UnsafeCell<Guts<Input>>,
+pub struct XmlElement<'a, Input: for<'b> AsyncIterator<Item<'b> = Result<u8, E>>, E> {
+	parent: Option<&'a XmlElement<'a, Input, E>>,
+	guts: UnsafeCell<Guts<'a, Input, E>>,
 	tag_name: XmlName,
 	attributes: alloc::collections::BTreeMap<XmlName, String>,
 }
 
-pub struct XmlElementChildren<'a, Input: TryStream<Item = u8>> {
-	parent: &'a XmlElement<'a, Input>,
-	guts: &'a mut Guts<Input>,
+pub struct XmlElementChildren<'a, Input: for<'b> AsyncIterator<Item<'b> = Result<u8, E>>, E> {
+	parent: &'a XmlElement<'a, Input, E>,
+	guts: &'a mut Guts<'a, Input, E>,
 }
 
-struct Guts<Input: TryStream<Item = u8>> {
-	parent: *mut Guts<Input>,
-	input: NonNull<PeekStream<Input, PEEK>>,
+struct Guts<'a, Input: for<'b> AsyncIterator<Item<'b> = Result<u8, E>>, E> {
+	parent: *mut Guts<'a, Input, E>,
+	input: NonNull<PeekStream<'a, Input, PEEK>>,
 	state: ItemState,
 }
 
-impl<Input: TryStream<Item = u8>> Guts<Input> {
+impl<'a, Input: for<'b> AsyncIterator<Item<'b> = Result<u8, E>>, E> Guts<'a, Input, E> {
 	#[instrument(skip(input))]
-	unsafe fn new(input: NonNull<PeekStream<Input, PEEK>>, parent: *mut Guts<Input>) -> Self {
+	unsafe fn new(
+		input: NonNull<PeekStream<Input, PEEK>>,
+		parent: *mut Guts<'a, Input, E>,
+	) -> Self {
 		Self {
 			parent: parent.tap(|parent| {
 				if let Some(parent) = parent.as_mut() {
@@ -38,7 +43,7 @@ impl<Input: TryStream<Item = u8>> Guts<Input> {
 	}
 }
 
-impl<'a, Input: TryStream<Item = u8>> XmlElement<'a, Input> {
+impl<'a, Input: for<'b> AsyncIterator<Item<'b> = Result<u8, E>>, E> XmlElement<'a, Input, E> {
 	#[instrument(skip(self))]
 	pub async fn next_child(&mut self) -> Result<Option<XmlElement<'_, Input>>, Error> {
 		unsafe { &mut *self.guts.get() }.next_child(self).await
@@ -47,7 +52,10 @@ impl<'a, Input: TryStream<Item = u8>> XmlElement<'a, Input> {
 	#[instrument(skip(self))]
 	pub fn remaining_children_by_ref(
 		&mut self,
-	) -> (&'_ XmlElement<'a, Input>, XmlElementChildren<'_, Input>) {
+	) -> (
+		&'_ XmlElement<'a, Input, E>,
+		XmlElementChildren<'_, Input, E>,
+	) {
 		(
 			self,
 			XmlElementChildren {
@@ -72,18 +80,20 @@ impl<'a, Input: TryStream<Item = u8>> XmlElement<'a, Input> {
 	}
 }
 
-impl<'a, Input: TryStream<Item = u8>> XmlElementChildren<'a, Input> {
+impl<'a, Input: 'a + for<'b> AsyncIterator<Item<'b> = Result<u8, E>>, E>
+	XmlElementChildren<'a, Input, E>
+{
 	#[instrument(skip(self))]
 	pub async fn next_child(&mut self) -> Result<Option<XmlElement<'_, Input>>, Error> {
 		self.guts.next_child(self.parent).await
 	}
 }
 
-impl<Input: TryStream<Item = u8>> Guts<Input> {
+impl<'a, Input: for<'b> AsyncIterator<Item<'b> = Result<u8, E>>, E> Guts<'a, Input, E> {
 	#[instrument(skip(self, owner))]
 	async fn next_child(
 		&mut self,
-		owner: &XmlElement<'_, Input>,
+		owner: &XmlElement<'_, Input, E>,
 	) -> Result<Option<XmlElement<'_, Input>>, Error> {
 		match self.state {
 			ItemState::Finished => None,
