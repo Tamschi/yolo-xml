@@ -5,7 +5,11 @@
 #![doc(html_root_url = "https://docs.rs/yolo-xml/0.0.1")]
 #![no_std]
 #![warn(clippy::pedantic, missing_docs)]
-#![allow(clippy::semicolon_if_nothing_returned, clippy::if_not_else, clippy::single_match_else)]
+#![allow(
+	clippy::semicolon_if_nothing_returned,
+	clippy::if_not_else,
+	clippy::single_match_else
+)]
 
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
