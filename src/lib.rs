@@ -20,7 +20,10 @@ use futures_core::Stream;
 use peek_stream::PeekStream;
 use tap::Pipe as _;
 
-const PEEK: usize = 0;
+/// Peek buffer size for the longest token I need to branch on.
+///
+/// That's probably `<!--`.
+const PEEK: usize = 4;
 
 pub mod blocking;
 mod peek_stream;
