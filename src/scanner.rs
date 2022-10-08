@@ -72,6 +72,8 @@ fn Comment<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a
 		(1, _) => {
 			if let Some(comment_end) = buffer.shift_known_array(b"-->")? {
 				Yield(2, Event::CommentEnd(comment_end).into())
+			} else if buffer.filled().starts_with(b"--") {
+				Error(Error::UnexpectedSequence(b"--"))
 			} else {
 				match buffer.validate() {
 					(valid, Err(error @ Utf8Error)) if valid.is_empty() => {
@@ -80,16 +82,13 @@ fn Comment<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a
 					(valid, Ok(())) if valid.is_empty() => return Err(OutOfBoundsError::new()),
 					(valid, _) => {
 						if let Some(dashes_at) = valid.find("--") {
-							match dashes_at {
-								0 => Error(Error::UnexpectedSequence(b"--")),
-								dashes_at => Yield(
-									1,
-									Event::CommentChunk(
-										buffer.shift_validated(dashes_at).expect("unreachable"),
-									)
-									.into(),
-								),
-							}
+							Yield(
+								1,
+								Event::CommentChunk(
+									buffer.shift_validated(dashes_at).expect("unreachable"),
+								)
+								.into(),
+							)
 						} else {
 							Yield(
 								1,
