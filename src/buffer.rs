@@ -1,6 +1,5 @@
 use core::{
 	cmp::min,
-	convert::TryFrom,
 	fmt::Debug,
 	mem::MaybeUninit,
 	str::{from_utf8, from_utf8_unchecked, from_utf8_unchecked_mut},
@@ -90,7 +89,7 @@ impl StrBuf<'_> {
 
 	/// # Safety
 	///
-	/// The first n "remaining" bytes must have been and still be initialised..
+	/// The first n "remaining" bytes must have been and still be initialised.
 	///
 	/// # Panics
 	///
