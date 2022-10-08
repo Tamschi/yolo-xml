@@ -1,6 +1,5 @@
 use crate::buffer::{OutOfBoundsError, StrBuf, Utf8Error};
-use core::mem::{ManuallyDrop, MaybeUninit};
-use std::{ops::Deref, ptr::addr_of};
+use tap::Pipe;
 
 type NextFn = for<'a> fn(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a>;
 type NextFnR<'a> = Result<Next<'a>, OutOfBoundsError>;
@@ -9,28 +8,25 @@ enum Next<'a> {
 	Call(u8, NextFn),
 	Yield(u8, Event_<'a>),
 	Continue(u8),
+	Error(Error),
 }
 use Next::*;
 
 enum RetVal {
 	Success,
 	Failure,
-	Error(Error),
 }
-use tap::Pipe;
-use this_is_fine::FineExt;
 use RetVal::*;
 
 /// [1]
 fn document<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
-		(_, Error(error)) => Exit(Error(error)),
 		(0, _) => Call(1, prolog),
 		(1, Success) => Call(2, element),
 		(2 | 3, Success) => Call(3, Misc),
 		(3, Failure) => Exit(Success),
-		(1, Failure) => Exit(Error(Error::Expected22Prolog)),
-		(2, Failure) => Exit(Error(Error::Expected39Element)),
+		(1, Failure) => Error(Error::Expected22Prolog),
+		(2, Failure) => Error(Error::Expected39Element),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -39,7 +35,6 @@ fn document<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'
 /// [3]
 fn S<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
-		(_, Error(error)) => Exit(Error(error)),
 		(0, _) => match buffer
 			.shift_known_array(&[0x20])
 			.transpose()
@@ -70,7 +65,6 @@ fn S<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 /// [15]
 fn Comment<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
-		(_, Error(error)) => Exit(Error(error)),
 		(0, _) => match buffer.shift_known_array(b"<!--")? {
 			Some(comment_start) => Yield(1, Event::CommentStart(comment_start).into()),
 			None => Exit(Failure),
@@ -81,13 +75,13 @@ fn Comment<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a
 			} else {
 				match buffer.validate() {
 					(valid, Err(error @ Utf8Error)) if valid.is_empty() => {
-						Exit(Error(Error::Utf8Error(error)))
+						Error(Error::Utf8Error(error))
 					}
 					(valid, Ok(())) if valid.is_empty() => return Err(OutOfBoundsError::new()),
 					(valid, _) => {
 						if let Some(dashes_at) = valid.find("--") {
 							match dashes_at {
-								0 => Exit(Error(Error::UnexpectedSequence(b"--"))),
+								0 => Error(Error::UnexpectedSequence(b"--")),
 								dashes_at => Yield(
 									1,
 									Event::CommentChunk(
@@ -124,7 +118,6 @@ fn Comment<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a
 /// [22]
 fn prolog<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
-		(_, Error(error)) => Exit(Error(error)),
 		(0, _) => Call(1, XMLDecl),
 		(1 | 2, Success) => Call(2, Misc),
 		(2, Failure) => Call(3, doctypedecl),
@@ -139,14 +132,13 @@ fn prolog<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a>
 /// [23]
 fn XMLDecl<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
-		(_, Error(error)) => Exit(Error(error)),
 		(0, _) => match buffer.shift_known_array(b"<?xml")? {
 			Some(_) => Continue(1),
-			None => Yield(0, Event_::DowngradeFrom1_1),
+			None => Yield(0, Event_::Reboot_Version_1_0),
 		},
 		(1, _) => Call(2, VersionInfo),
 		(2, Success) => Call(3, EncodingDecl),
-		(2, Failure) => Exit(Error(Error::Expected24VersionInfo)),
+		(2, Failure) => Error(Error::Expected24VersionInfo),
 		(3, _) => Call(4, SDDecl),
 		(4, _) => Call(5, S),
 		(5, _) => match buffer.shift_known_array(b"?>")? {
@@ -162,11 +154,10 @@ fn XMLDecl<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a
 /// [24]
 fn VersionInfo<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
-		(_, Error(error)) => Exit(Error(error)),
 		(0, _) => Call(1, S),
 		(1, Success) => match buffer.shift_known_array(b"version")? {
 			Some(_) => Continue(2),
-			None => Exit(Error(Error::ExpectedLiteral(b"version"))),
+			None => Error(Error::ExpectedLiteral(b"version")),
 		},
 		(1, Failure) => Exit(Failure),
 		(2, _) => Call(3, Eq),
@@ -174,19 +165,19 @@ fn VersionInfo<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFn
 			Some(_) => Continue(4),
 			None => match buffer.shift_known_array(b"\"")? {
 				Some(_) => Continue(6),
-				None => Exit(Error(Error::ExpectedQuote)),
+				None => Error(Error::ExpectedQuote),
 			},
 		},
 		(3, Failure) => unreachable!("`Eq` shouldn't fail."),
 		(4, _) => Call(5, VersionNum),
 		(5, Success) => match buffer.shift_known_array(b"'")? {
 			Some(_) => Exit(Success),
-			None => Exit(Error(Error::ExpectedLiteral(b"'"))),
+			None => Error(Error::ExpectedLiteral(b"'")),
 		},
 		(6, _) => Call(7, VersionNum),
 		(7, Success) => match buffer.shift_known_array(b"\"")? {
 			Some(_) => Exit(Success),
-			None => Exit(Error(Error::ExpectedLiteral(b"\""))),
+			None => Error(Error::ExpectedLiteral(b"\"")),
 		},
 		(5 | 7, Failure) => unreachable!("should downgrade"),
 		_ => unreachable!(),
@@ -199,11 +190,10 @@ fn VersionInfo<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFn
 /// Never returns `Ok(Exit(Failure))`.
 fn Eq<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
-		(_, Error(error)) => Exit(Error(error)),
 		(0, _) => Call(1, S),
 		(1, _) => match buffer.shift_known_array(b"=")? {
 			Some(_) => Continue(2),
-			None => Exit(Error(Error::ExpectedLiteral(b"="))),
+			None => Error(Error::ExpectedLiteral(b"=")),
 		},
 		(2, _) => Call(3, S),
 		(3, _) => Exit(Success),
@@ -215,7 +205,6 @@ fn Eq<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 /// [26]
 fn VersionNum<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
-		(_, Error(error)) => Exit(Error(error)),
 		(0, _) => match buffer.shift_known_array(b"1.1")? {
 			Some(version) => Yield(1, Event::Version(version).into()),
 			None => Yield(0, Event_::DowngradeFrom1_1),
@@ -228,7 +217,6 @@ fn VersionNum<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR
 /// [27]
 fn Misc<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
-		(_, Error(error)) => Exit(Error(error)),
 		(0, _) => Call(1, Comment),
 		(1, Success) => Exit(Success),
 		(1, Failure) => Call(2, PI),
@@ -241,8 +229,9 @@ fn Misc<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 }
 
 enum Event_<'a> {
-	DowngradeFrom1_1,
 	Public(Event<'a>),
+	RebootToVersion1_0,
+	DowngradeFrom1_1,
 }
 impl<'a> From<Event<'a>> for Event_<'a> {
 	fn from(event: Event<'a>) -> Self {
@@ -254,8 +243,8 @@ impl<'a> From<Event<'a>> for Event_<'a> {
 pub enum Event<'a> {
 	Version(&'a mut [u8]),
 	CommentStart(&'a mut [u8; 4]),
-	CommentEnd(&mut [u8; 3]),
-	CommentChunk(&mut str),
+	CommentEnd(&'a mut [u8; 3]),
+	CommentChunk(&'a mut str),
 }
 
 enum Error {
@@ -266,5 +255,5 @@ enum Error {
 	Expected24VersionInfo,
 	Expected39Element,
 	Utf8Error(Utf8Error),
-	UnexpectedSequence(&[u8; 2]),
+	UnexpectedSequence(&'static [u8]),
 }
