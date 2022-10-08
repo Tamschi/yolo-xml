@@ -123,7 +123,7 @@ impl StrBuf<'_> {
 		match from_utf8(&self.filled()[self.validated..]) {
 			Ok(_) => self.validated = self.filled,
 			Err(e) => {
-				self.validated = e.valid_up_to();
+				self.validated += e.valid_up_to();
 				if let Some(len) = e.error_len() {
 					return (self.validated_mut(), Err(Utf8Error { len }));
 				}
