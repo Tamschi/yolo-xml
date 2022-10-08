@@ -294,7 +294,7 @@ pub struct OutOfBoundsError {
 	private: (),
 }
 impl OutOfBoundsError {
-	fn new() -> Self {
+	pub(crate) fn new() -> Self {
 		Self { private: () }
 	}
 }

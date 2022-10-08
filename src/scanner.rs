@@ -1,4 +1,4 @@
-use crate::buffer::{OutOfBoundsError, StrBuf};
+use crate::buffer::{OutOfBoundsError, StrBuf, Utf8Error};
 use core::mem::{ManuallyDrop, MaybeUninit};
 use std::{ops::Deref, ptr::addr_of};
 
@@ -7,7 +7,7 @@ type NextFnR<'a> = Result<Next<'a>, OutOfBoundsError>;
 enum Next<'a> {
 	Exit(RetVal),
 	Call(u8, NextFn),
-	Yield(u8, Event<'a>),
+	Yield(u8, Event_<'a>),
 	Continue(u8),
 }
 use Next::*;
@@ -18,6 +18,7 @@ enum RetVal {
 	Error(Error),
 }
 use tap::Pipe;
+use this_is_fine::FineExt;
 use RetVal::*;
 
 /// [1]
@@ -28,8 +29,8 @@ fn document<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'
 		(1, Success) => Call(2, element),
 		(2 | 3, Success) => Call(3, Misc),
 		(3, Failure) => Exit(Success),
-		(1, Failure) => Exit(Error(Error::ExpectedProlog)),
-		(2, Failure) => Exit(Error(Error::ExpectedElement)),
+		(1, Failure) => Exit(Error(Error::Expected22Prolog)),
+		(2, Failure) => Exit(Error(Error::Expected39Element)),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -66,6 +67,60 @@ fn S<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	.pipe(Ok)
 }
 
+/// [15]
+fn Comment<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(_, Error(error)) => Exit(Error(error)),
+		(0, _) => match buffer.shift_known_array(b"<!--")? {
+			Some(comment_start) => Yield(1, Event::CommentStart(comment_start).into()),
+			None => Exit(Failure),
+		},
+		(1, _) => {
+			if let Some(comment_end) = buffer.shift_known_array(b"-->")? {
+				Yield(2, Event::CommentEnd(comment_end).into())
+			} else {
+				match buffer.validate() {
+					(valid, Err(error @ Utf8Error)) if valid.is_empty() => {
+						Exit(Error(Error::Utf8Error(error)))
+					}
+					(valid, Ok(())) if valid.is_empty() => return Err(OutOfBoundsError::new()),
+					(valid, _) => {
+						if let Some(dashes_at) = valid.find("--") {
+							match dashes_at {
+								0 => Exit(Error(Error::UnexpectedSequence(b"--"))),
+								dashes_at => Yield(
+									1,
+									Event::CommentChunk(
+										buffer.shift_validated(dashes_at).expect("unreachable"),
+									)
+									.into(),
+								),
+							}
+						} else {
+							Yield(
+								1,
+								Event::CommentChunk(
+									buffer
+										.shift_validated(if valid.ends_with("-") {
+											valid.len() - "-".len()
+										} else {
+											valid.len()
+										})
+										.expect("unreachable"),
+								)
+								.into(),
+							)
+						}
+					}
+				}
+			}
+		}
+		(2, _) => Exit(Success),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
 /// [22]
 fn prolog<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
@@ -87,7 +142,7 @@ fn XMLDecl<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a
 		(_, Error(error)) => Exit(Error(error)),
 		(0, _) => match buffer.shift_known_array(b"<?xml")? {
 			Some(_) => Continue(1),
-			None => Yield(0, Event::DowngradeFrom1_1),
+			None => Yield(0, Event_::DowngradeFrom1_1),
 		},
 		(1, _) => Call(2, VersionInfo),
 		(2, Success) => Call(3, EncodingDecl),
@@ -162,24 +217,54 @@ fn VersionNum<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR
 	match (state, ret_val) {
 		(_, Error(error)) => Exit(Error(error)),
 		(0, _) => match buffer.shift_known_array(b"1.1")? {
-			Some(version) => Yield(1, Event::Version(version)),
-			None => Yield(0, Event::DowngradeFrom1_1),
+			Some(version) => Yield(1, Event::Version(version).into()),
+			None => Yield(0, Event_::DowngradeFrom1_1),
 		},
+		_ => unreachable!(),
 	}
 	.pipe(Ok)
 }
 
-#[non_exhaustive]
-enum Event<'a> {
+/// [27]
+fn Misc<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(_, Error(error)) => Exit(Error(error)),
+		(0, _) => Call(1, Comment),
+		(1, Success) => Exit(Success),
+		(1, Failure) => Call(2, PI),
+		(2, Success) => Exit(Success),
+		(2, Failure) => Call(3, S),
+		(3, either) => Exit(either),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
+enum Event_<'a> {
 	DowngradeFrom1_1,
+	Public(Event<'a>),
+}
+impl<'a> From<Event<'a>> for Event_<'a> {
+	fn from(event: Event<'a>) -> Self {
+		Self::Public(event)
+	}
+}
+
+#[non_exhaustive]
+pub enum Event<'a> {
 	Version(&'a mut [u8]),
+	CommentStart(&'a mut [u8; 4]),
+	CommentEnd(&mut [u8; 3]),
+	CommentChunk(&mut str),
 }
 
 enum Error {
-	ExpectedElement,
-	ExpectedProlog,
-	ExpectedWhitespace,
 	ExpectedLiteral(&'static [u8]),
 	ExpectedQuote,
+	Expected3Whitespace,
+	Expected22Prolog,
 	Expected24VersionInfo,
+	Expected39Element,
+	Utf8Error(Utf8Error),
+	UnexpectedSequence(&[u8; 2]),
 }

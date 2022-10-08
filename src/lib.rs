@@ -16,4 +16,4 @@
 mod readme {}
 
 pub mod buffer;
-pub mod tokenizer;
+pub mod scanner;
