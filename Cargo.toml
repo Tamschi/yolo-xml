@@ -2,7 +2,7 @@
 name = "yolo-xml"
 version = "0.0.1"
 authors = ["Tamme Schichler <tamme@schichler.dev>"]
-edition = "2018"
+edition = "2021"
 description = "A (hardened, validating, asynchronous) XML pull parser that respects your time."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Tamschi/yolo-xml"

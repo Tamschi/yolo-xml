@@ -6,7 +6,12 @@ use core::{
 	str::{from_utf8, from_utf8_unchecked, from_utf8_unchecked_mut},
 };
 use miette::Diagnostic;
-use std::ptr::{addr_of, addr_of_mut};
+use std::{
+	mem,
+	ops::Range,
+	ptr::{addr_of, addr_of_mut, copy_nonoverlapping},
+};
+use tap::TryConv;
 use this_is_fine::Fine;
 use thiserror::Error;
 
@@ -27,6 +32,18 @@ impl Debug for StrBuf<'_> {
 			.field("validated()", &self.validated())
 			.field("unvalidated_filled()", &self.unvalidated_filled())
 			.finish()
+	}
+}
+
+impl<'a> StrBuf<'a> {
+	#[must_use]
+	pub fn new(memory: &'a mut [MaybeUninit<u8>]) -> Self {
+		Self {
+			memory,
+			initialized: 0,
+			filled: 0,
+			validated: 0,
+		}
 	}
 }
 
@@ -120,37 +137,102 @@ impl StrBuf<'_> {
 		self.validated = 0;
 	}
 
-	pub fn reset(&mut self) {
-		self.validated = 0;
-		self.filled = 0;
-	}
-
-	pub fn consume_bytes<const N: usize>(&mut self) -> Result<[u8; N], OutOfBoundsError> {
-		if self.filled < N {
-			return Err(OutOfBoundsError::new());
-		}
-
-		let array = <[u8; N]>::try_from(&self.filled()[0..N]).expect("unreachable");
-		self.shift(N).expect("unreachable");
-		Ok(array)
-	}
-
-	pub fn shift(&mut self, n: usize) -> Result<(), OutOfBoundsError> {
-		if self.filled < n {
+	pub fn shift_validated(&mut self, len: usize) -> Result<&mut str, OutOfBoundsError> {
+		if self.validated < len {
 			Err(OutOfBoundsError::new())
 		} else {
-			for i in 0..min(n, self.initialized - n) {
-				self.memory[i] = self.memory[n + i];
-			}
-			self.validated = self.validated.saturating_sub(n);
-			self.filled -= n;
-			Ok(())
+			self.validated -= len;
+			self.filled -= len;
+			self.initialized -= len;
+			let (validated, memory) = mem::replace(&mut self.memory, &mut []).split_at_mut(len);
+			self.memory = memory;
+			Ok(unsafe { &mut *(validated as *mut [MaybeUninit<u8>] as *mut str) })
+		}
+	}
+
+	pub fn shift_filled(&mut self, len: usize) -> Result<&mut [u8], OutOfBoundsError> {
+		if self.filled < len {
+			Err(OutOfBoundsError::new())
+		} else {
+			self.validated = self.validated.saturating_sub(len);
+			self.filled -= len;
+			self.initialized -= len;
+			let (filled, memory) = mem::replace(&mut self.memory, &mut []).split_at_mut(len);
+			self.memory = memory;
+			Ok(unsafe { &mut *(filled as *mut [MaybeUninit<u8>] as *mut [u8]) })
 		}
 	}
 
 	#[must_use]
 	pub fn remaining_len(&self) -> usize {
 		self.memory.len() - self.filled
+	}
+
+	#[must_use]
+	pub fn into_filled_raw_parts(self) -> Range<*mut u8> {
+		self.memory[0].as_mut_ptr()..self.memory[self.filled].as_mut_ptr()
+	}
+}
+
+impl<'a> StrBuf<'a> {
+	/// (Re-)initialises an [`StrBuf`] over `memory` while retaining the data in `filled`.
+	///
+	/// # Safety
+	///
+	/// `filled` must be within `memory` and initialised.
+	///
+	/// # Panics
+	///
+	/// This function **may** panic in some cases where its safety constraints are not upheld.
+	pub unsafe fn reset(memory: &'a mut [MaybeUninit<u8>], filled: Range<*mut u8>) -> Self {
+		if cfg!(debug) {
+			'ok: loop {
+				'fail: for i in 0..memory.len() {
+					if memory[i].as_mut_ptr() == filled.start {
+						for i in &mut memory[i..] {
+							if i.as_mut_ptr() == filled.end {
+								break 'ok;
+							}
+						}
+						break 'fail;
+					}
+				}
+				panic!("`filled` pointer validity check fail. Expected `filled` in `memory` ({:p} <= {:p} <= {:p} <= {:p}).", memory.as_mut_ptr_range().start, filled.start, filled.end, memory.as_mut_ptr_range().end)
+			}
+		}
+
+		let memory_start = addr_of_mut!(memory[0]).cast::<u8>();
+
+		// Note that we mustn't dereference through `filled`, as that would break non-aliasing guarantees!
+		let filled = (filled
+			.start
+			.offset_from(memory_start)
+			.try_conv::<usize>()
+			.unwrap())
+			..(filled
+				.end
+				.offset_from(memory_start)
+				.try_conv::<usize>()
+				.unwrap());
+		if filled.len() > filled.start {
+			// Slow path.
+			for (dest, src) in filled.clone().enumerate() {
+				memory[dest] = memory[src];
+			}
+		} else {
+			// Fast path.
+			copy_nonoverlapping(
+				addr_of_mut!(memory[filled.start]),
+				addr_of_mut!(memory[0]),
+				filled.len(),
+			);
+		}
+		Self {
+			memory,
+			initialized: filled.len(),
+			filled: filled.len(),
+			validated: 0,
+		}
 	}
 }
 
