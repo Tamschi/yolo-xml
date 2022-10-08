@@ -143,7 +143,7 @@ impl StrBuf<'_> {
 			self.validated -= len;
 			self.filled -= len;
 			self.initialized -= len;
-			let (validated, memory) = mem::replace(&mut self.memory, &mut []).split_at_mut(len);
+			let (validated, memory) = mem::take(&mut self.memory).split_at_mut(len);
 			self.memory = memory;
 			Ok(unsafe { &mut *(validated as *mut [MaybeUninit<u8>] as *mut str) })
 		}
@@ -156,7 +156,7 @@ impl StrBuf<'_> {
 			self.validated = self.validated.saturating_sub(len);
 			self.filled -= len;
 			self.initialized -= len;
-			let (filled, memory) = mem::replace(&mut self.memory, &mut []).split_at_mut(len);
+			let (filled, memory) = mem::take(&mut self.memory).split_at_mut(len);
 			self.memory = memory;
 			Ok(unsafe { &mut *(filled as *mut [MaybeUninit<u8>] as *mut [u8]) })
 		}
@@ -198,6 +198,23 @@ impl StrBuf<'_> {
 	#[must_use]
 	pub fn into_filled_raw_parts(self) -> Range<*mut u8> {
 		self.memory[0].as_mut_ptr()..self.memory[self.filled].as_mut_ptr()
+	}
+
+	pub fn clone_into<'a>(
+		&self,
+		memory: &'a mut [MaybeUninit<u8>],
+	) -> Result<StrBuf<'a>, OutOfBoundsError> {
+		if self.filled > memory.len() {
+			Err(OutOfBoundsError::new())
+		} else {
+			memory[..self.filled].copy_from_slice(&self.memory[..self.filled]);
+			Ok(StrBuf {
+				memory,
+				initialized: self.filled,
+				filled: self.filled,
+				validated: self.validated,
+			})
+		}
 	}
 }
 
@@ -246,9 +263,7 @@ impl<'a> StrBuf<'a> {
 				.unwrap());
 		if filled.len() > filled.start {
 			// Slow path.
-			for (dest, src) in filled.clone().enumerate() {
-				memory[dest] = memory[src];
-			}
+			memory.copy_within(filled.clone(), 0);
 		} else {
 			// Fast path.
 			copy_nonoverlapping(
