@@ -67,7 +67,28 @@ impl StrBuf<'_> {
 
 	#[must_use]
 	pub fn remaining_maybe_uninitialized(&mut self) -> &mut [MaybeUninit<u8>] {
+		self.initialized = self.filled;
 		&mut self.memory[self.filled..]
+	}
+
+	/// # Safety
+	///
+	/// The first n "remaining" bytes must have been and still be initialised..
+	///
+	/// # Panics
+	///
+	/// Iff trying to assume more bytes as filled than there are remaining.
+	pub unsafe fn assume_filled_n_remaining(&mut self, n: usize) {
+		self.filled = match self.filled.checked_add(n) {
+			Some(filled) if filled <= self.memory.len() => filled,
+			Some(overfilled) => panic!(
+				"Tried to mark first {} of {} bytes as filled.",
+				overfilled,
+				self.memory.len()
+			),
+			None => panic!("`usize` overflow ({} + {}).", self.filled, n),
+		};
+		self.initialized = self.filled + n;
 	}
 
 	pub fn fuzzy_initialize_n(&mut self, n: usize) -> usize {
