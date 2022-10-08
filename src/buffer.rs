@@ -167,24 +167,25 @@ impl StrBuf<'_> {
 	/// # Errors
 	///
 	/// Iff this buffer does not contain enough data to determine whether the data stream begins with `data`.
-	pub fn skip_if_next<const LEN: usize>(
+	pub fn shift_known_array<const LEN: usize>(
 		&mut self,
 		data: &[u8; LEN],
-	) -> Result<bool, OutOfBoundsError> {
+	) -> Result<Option<&mut [u8; LEN]>, OutOfBoundsError> {
 		if self.filled < LEN {
 			if *self.filled() == data[..self.filled] {
 				Err(OutOfBoundsError::new())
 			} else {
-				Ok(false)
+				Ok(None)
 			}
 		} else {
 			if unsafe { *(addr_of!(self.memory[0]).cast::<[u8; LEN]>()) } == *data {
 				self.validated = self.validated.saturating_sub(LEN);
 				self.filled -= LEN;
 				self.initialized -= LEN;
-				true
+				let (skipped, memory) = self.memory.split_array_mut();
+				Some(unsafe { &mut *(skipped as *mut [MaybeUninit<u8>; LEN]).cast::<[u8; LEN]>() })
 			} else {
-				false
+				None
 			}
 			.pipe(Ok)
 		}
