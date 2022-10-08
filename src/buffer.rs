@@ -10,7 +10,7 @@ use std::{
 	ops::Range,
 	ptr::{addr_of, addr_of_mut, copy_nonoverlapping},
 };
-use tap::TryConv;
+use tap::{Pipe, TryConv};
 use this_is_fine::Fine;
 use thiserror::Error;
 
@@ -162,6 +162,34 @@ impl StrBuf<'_> {
 		}
 	}
 
+	/// Skips past one occurrence of `data` at the beginning of this buffer if present, returning whether it did so.
+	///
+	/// # Errors
+	///
+	/// Iff this buffer does not contain enough data to determine whether the data stream begins with `data`.
+	pub fn skip_if_next<const LEN: usize>(
+		&mut self,
+		data: &[u8; LEN],
+	) -> Result<bool, OutOfBoundsError> {
+		if self.filled < LEN {
+			if *self.filled() == data[..self.filled] {
+				Err(OutOfBoundsError::new())
+			} else {
+				Ok(false)
+			}
+		} else {
+			if unsafe { *(addr_of!(self.memory[0]).cast::<[u8; LEN]>()) } == *data {
+				self.validated = self.validated.saturating_sub(LEN);
+				self.filled -= LEN;
+				self.initialized -= LEN;
+				true
+			} else {
+				false
+			}
+			.pipe(Ok)
+		}
+	}
+
 	#[must_use]
 	pub fn remaining_len(&self) -> usize {
 		self.memory.len() - self.filled
@@ -196,7 +224,10 @@ impl<'a> StrBuf<'a> {
 						break 'fail;
 					}
 				}
-				panic!("`filled` pointer validity check fail. Expected `filled` in `memory` ({:p} <= {:p} <= {:p} <= {:p}).", memory.as_mut_ptr_range().start, filled.start, filled.end, memory.as_mut_ptr_range().end)
+				panic!(
+					"`filled` pointer validity check fail. Expected `filled` in `memory` ({:p} <= {:p} <= {:p} <= {:p}).",
+					memory.as_mut_ptr_range().start, filled.start, filled.end, memory.as_mut_ptr_range().end,
+				);
 			}
 		}
 
