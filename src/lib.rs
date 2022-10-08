@@ -21,6 +21,7 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+use alloc::borrow::ToOwned;
 use core::{
 	fmt::{self, Debug, Display, Formatter},
 	future::Future,
@@ -91,12 +92,15 @@ fn fake_discard_callback<'a, T, E>() -> &'a mut dyn FnMut(T) -> Result<(), E> {
 /// [3] S
 async fn skip_whitespace<
 	'a,
-	Input: AsyncIterator<Item<'a> = Result<char, E>>,
+	Input: 'a + for<'b> AsyncIterator<Item<'b> = Result<char, E>>,
 	E: Clone,
 	const CAPACITY: usize,
 >(
-	mut input: Pin<&mut PeekStream<'_, Input, CAPACITY>>,
-) -> Result<(), E> {
+	mut input: Pin<&'a mut PeekStream<'_, Input, CAPACITY>>,
+) -> Result<(), E>
+where
+	<E as ToOwned>::Owned: 'static,
+{
 	while input
 		.as_mut()
 		.next_if(|next: &Result<char, _>| match next {
