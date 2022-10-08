@@ -37,8 +37,12 @@ std = [] # Implements `std::error::Error` for `Error`.
 ergo-pin = "0.1.0" # Patches may require newer compiler versions.
 futures-core = { version = "0.3.16", default-features = false, features = ["alloc"] }
 futures-util = { version = "0.3.16", default-features = false, features = ["alloc"] }
+miette = "5.3.0"
+nom = "7.1.1"
 pin-project = "1.0.7"
 tap = "1.0.1"
+this-is-fine = "0.0.1"
+thiserror = "1.0.37"
 tracing = { version = "0.1.26", default-features = false, features = ["attributes"] }
 
 [dev-dependencies]
