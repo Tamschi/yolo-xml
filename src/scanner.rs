@@ -276,6 +276,40 @@ fn Misc<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> 
 	.pipe(Ok)
 }
 
+/// [28]
+fn doctypedecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => match buffer.shift_known_array(b"<!DOCTYPE")? {
+			Some(start) => Yield(1, Event::DoctypedeclStart(start).into()),
+			None => Exit(Failure),
+		},
+		(1, _) => Call(2, S),
+		(2, Success) => Call(3, Name),
+		(2, Failure) => Error(Error::Expected3Whitespace),
+		(3, Success) => Call(4, S),
+		(3, Failure) => Error(Error::Expected5Name),
+		(4, Success) => Call(5, ExternalID),
+		(4, Failure) => Continue(6),
+		(5, _) => Call(6, S),
+		(6, _) => match buffer.shift_known_array(b"[")? {
+			Some(_) => Call(7, intSubset),
+			None => Continue(8),
+		},
+		(7, Success) => match buffer.shift_known_array(b"]")? {
+			Some(_) => Call(8, S),
+			None => Error(Error::ExpectedLiteral(b"]")),
+		},
+		(7, Failure) => Error(Error::Expected28bIntSubset),
+		(8, _) => match buffer.shift_known_array(b">")? {
+			Some(end) => Yield(9, Event::DoctypedeclEnd(end).into()),
+			None => Error(Error::ExpectedLiteral(b">")),
+		},
+		(9, _) => Exit(Success),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
 /// [39], [40], [44]
 fn element<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
@@ -366,6 +400,8 @@ pub enum Event<'a> {
 	PIStart(&'a mut [u8; 2]),
 	PIEnd(&'a mut [u8; 2]),
 	PIChunk(&'a mut str),
+	DoctypedeclStart(&'a mut [u8; 9]),
+	DoctypedeclEnd(&'a mut [u8; 1]),
 }
 
 enum Error {
@@ -385,4 +421,5 @@ enum Error {
 	Expected10AttValue,
 	Expected17PITarget,
 	ExpectedWhitespaceOrPIEnd,
+	Expected28bIntSubset,
 }
