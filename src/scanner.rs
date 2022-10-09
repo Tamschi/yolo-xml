@@ -231,7 +231,7 @@ fn Misc<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 fn element<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"<")? {
-			Some(lt) => Yield(1, Event::TagStartStart(lt).into()),
+			Some(lt) => Yield(1, Event::StartTagStart(lt).into()),
 			None => Exit(Failure),
 		},
 		(1, _) => Call(2, Name),
@@ -257,6 +257,26 @@ fn element<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a
 	.pipe(Ok)
 }
 
+/// [42]
+fn ETag<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => match buffer.shift_known_array(b"</")? {
+			Some(start) => Yield(1, Event::EndTagStart(start).into()),
+			None => Exit(Failure),
+		},
+		(1, _) => Call(2, Name),
+		(2, Success) => Call(3, S),
+		(2, Failure) => Error(Error::Expected5Name),
+		(3, _) => match buffer.shift_known_array(b">")? {
+			Some(end) => Yield(4, Event::EndTagEnd(end).into()),
+			None => Error(Error::ExpectedEndTagEnd),
+		},
+		(4, _) => Exit(Success),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
 enum Event_<'a> {
 	Public(Event<'a>),
 	RebootToVersion1_0,
@@ -274,9 +294,11 @@ pub enum Event<'a> {
 	CommentStart(&'a mut [u8; 4]),
 	CommentEnd(&'a mut [u8; 3]),
 	CommentChunk(&'a mut str),
-	TagStartStart(&'a mut [u8; 1]),
-	StartTagEndEmpty(&mut [u8; 2]),
-	StartTagEnd(&mut [u8; 1]),
+	StartTagStart(&'a mut [u8; 1]),
+	StartTagEndEmpty(&'a mut [u8; 2]),
+	StartTagEnd(&'a mut [u8; 1]),
+	EndTagStart(&'a mut [u8; 2]),
+	EndTagEnd(&'a mut [u8; 1]),
 }
 
 enum Error {
@@ -291,4 +313,5 @@ enum Error {
 	Expected5Name,
 	ExpectedStartTagEnd,
 	Expected42ETag,
+	ExpectedEndTagEnd,
 }
