@@ -321,6 +321,22 @@ fn intSubset<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR
 	.pipe(Ok)
 }
 
+/// [29]
+fn markupdecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => Call(1, elementdecl),
+		(1, Failure) => Call(2, AttlistDecl),
+		(2, Failure) => Call(3, EntityDecl),
+		(3, Failure) => Call(4, NotationDecl),
+		(4, Failure) => Call(5, PI),
+		(5, Failure) => Call(6, Comment),
+		(6, Failure) => Exit(Failure),
+		(1 | 2 | 3 | 4 | 5 | 6, Success) => Exit(Success),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
 /// [39], [40], [44]
 fn element<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
