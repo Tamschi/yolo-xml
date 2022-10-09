@@ -33,6 +33,7 @@ fn document<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<
 }
 
 /// [3]
+/// Start tokens: *0x20* | *0x9* | *0xD* | *0xA*
 fn S<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => match buffer
@@ -63,6 +64,7 @@ fn S<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 }
 
 /// [15]
+/// Start tokens: `<!--`
 fn Comment<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"<!--")? {
@@ -162,6 +164,51 @@ fn PI<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	.pipe(Ok)
 }
 
+/// [18]
+/// Start tokens: `<![CDATA[`
+fn CDSect<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => Call(1, CDStart),
+		(1, Success) => Call(2, CData),
+		(1, Failure) => Exit(Failure),
+		(2, Success) => Call(3, CDEnd),
+		(3, Success) => Exit(Success),
+		(2 | 3, Failure) => {
+			unreachable!("logically unreachable, unless the buffer is manipulated somehow")
+		}
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
+/// [19]
+/// Start tokens: `<![CDATA[`
+fn CDStart<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => match buffer.shift_known_array(b"<![CDATA[")? {
+			Some(start) => Yield(1, Event::CDStart(start).into()),
+			None => Exit(Failure),
+		},
+		(1, _) => Exit(Success),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
+/// [21]
+/// Start tokens: `]]>`
+fn CDEnd<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => match buffer.shift_known_array(b"]]>")? {
+			Some(end) => Yield(1, Event::CDEnd(end).into()),
+			None => Exit(Failure),
+		},
+		(1, _) => Exit(Success),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
 /// [22]
 fn prolog<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
@@ -177,6 +224,7 @@ fn prolog<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a
 }
 
 /// [23]
+/// Start tokens: any (because it yields an internal reboot/downgrade event if it doesn't see `<?xml`)
 fn XMLDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"<?xml")? {
@@ -233,6 +281,7 @@ fn VersionInfo<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextF
 }
 
 /// [25]
+/// Start tokens: any
 ///
 /// Never returns `Ok(Exit(Failure))`.
 fn Eq<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
@@ -350,6 +399,7 @@ fn markupdecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFn
 }
 
 /// [39], [40], [44]
+/// Start tokens: `<`
 fn element<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"<")? {
@@ -502,6 +552,8 @@ pub enum Event<'a> {
 	PEReferenceEnd(&'a mut [u8; 1]),
 	EntityRefStart(&'a mut [u8; 1]),
 	EntityRefEnd(&'a mut [u8; 1]),
+	CDStart(&'a mut [u8; 9]),
+	CDEnd(&'a mut [u8; 3]),
 }
 
 enum Error {

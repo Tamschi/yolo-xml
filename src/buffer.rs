@@ -275,6 +275,7 @@ impl<'a> StrBuf<'a> {
 		}
 		Self {
 			memory,
+			//TODO: This should be more.
 			initialized: filled.len(),
 			filled: filled.len(),
 			validated: 0,
