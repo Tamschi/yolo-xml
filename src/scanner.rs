@@ -310,6 +310,18 @@ fn doctypedecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextF
 	.pipe(Ok)
 }
 
+/// [28a]
+fn DeclSep<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => Call(1, PEReference),
+		(1, Failure) => Call(2, S),
+		(2, Failure) => Exit(Failure),
+		(1 | 2, Success) => Exit(Success),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
 /// [28b]
 fn intSubset<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
@@ -402,6 +414,25 @@ fn ETag<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> 
 	.pipe(Ok)
 }
 
+/// [69]
+fn PEReference<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => match buffer.shift_known_array(b"%")? {
+			Some(start) => Yield(1, Event::PEReferenceStart(start).into()),
+			None => Exit(Failure),
+		},
+		(1, _) => Call(2, Name),
+		(2, Success) => match buffer.shift_known_array(b";")? {
+			Some(end) => Yield(3, Event::PEReferenceEnd(end).into()),
+			None => Error(Error::ExpectedLiteral(b";")),
+		},
+		(2, Failure) => Error(Error::Expected5Name),
+		(3, _) => Exit(Success),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
 enum Event_<'a> {
 	Public(Event<'a>),
 	RebootToVersion1_0,
@@ -429,6 +460,8 @@ pub enum Event<'a> {
 	PIChunk(&'a mut str),
 	DoctypedeclStart(&'a mut [u8; 9]),
 	DoctypedeclEnd(&'a mut [u8; 1]),
+	PEReferenceStart(&'a mut [u8; 1]),
+	PEReferenceEnd(&'a mut [u8; 1]),
 }
 
 enum Error {
