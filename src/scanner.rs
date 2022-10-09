@@ -313,8 +313,7 @@ fn doctypedecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextF
 /// [28b]
 fn intSubset<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
-		(0, _) => Call(1, markupdecl),
-		(1 | 2, Success) => Continue(0),
+		(0, _) | (1 | 2, Success) => Call(1, markupdecl),
 		(1, Failure) => Call(2, DeclSep),
 		(2, Failure) => Exit(Success),
 		_ => unreachable!(),
