@@ -227,6 +227,36 @@ fn Misc<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	.pipe(Ok)
 }
 
+/// [39], [40], [44]
+fn element<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => match buffer.shift_known_array(b"<")? {
+			Some(lt) => Yield(1, Event::TagStartStart(lt).into()),
+			None => Exit(Failure),
+		},
+		(1, _) => Call(2, Name),
+		(2, Success) => Call(3, S),
+		(2, Failure) => Error(Error::Expected5Name),
+		(3, Success) => Call(Attribute, 4),
+		(4, Success) => Call(3, S),
+		(3 | 4, Failure) => match buffer.shift_known_array(b">")? {
+			Some(end) => Yield(5, Event::StartTagEnd(end).into()),
+			None => match buffer.shift_known_array(b"/>")? {
+				Some(empty_end) => Yield(8, Event::StartTagEndEmpty(empty_end).into()),
+				None => Error(Error::ExpectedStartTagEnd),
+			},
+		},
+		(5, _) => Call(6, Content),
+		(6, Success) => Call(7, ETag),
+		(6, Failure) => unreachable!(),
+		(7, Success) => Exit(Success),
+		(7, Failure) => Error(Error::Expected42ETag),
+		(8, _) => Exit(Success),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
 enum Event_<'a> {
 	Public(Event<'a>),
 	RebootToVersion1_0,
@@ -244,6 +274,9 @@ pub enum Event<'a> {
 	CommentStart(&'a mut [u8; 4]),
 	CommentEnd(&'a mut [u8; 3]),
 	CommentChunk(&'a mut str),
+	TagStartStart(&'a mut [u8; 1]),
+	StartTagEndEmpty(&mut [u8; 2]),
+	StartTagEnd(&mut [u8; 1]),
 }
 
 enum Error {
@@ -255,4 +288,7 @@ enum Error {
 	Expected39Element,
 	Utf8Error(Utf8Error),
 	UnexpectedSequence(&'static [u8]),
+	Expected5Name,
+	ExpectedStartTagEnd,
+	Expected42ETag,
 }
