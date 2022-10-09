@@ -238,7 +238,7 @@ fn element<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 		(1, _) => Call(2, Name),
 		(2, Success) => Call(3, S),
 		(2, Failure) => Error(Error::Expected5Name),
-		(3, Success) => Call(Attribute, 4),
+		(3, Success) => Call(4, Attribute),
 		(4, Success) => Call(3, S),
 		(3 | 4, Failure) => match buffer.shift_known_array(b">")? {
 			Some(end) => Yield(5, Event::StartTagEnd(end).into()),
@@ -253,6 +253,21 @@ fn element<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 		(7, Success) => Exit(Success),
 		(7, Failure) => Error(Error::Expected42ETag),
 		(8, _) => Exit(Success),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
+/// [41]
+fn Attribute<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => Call(1, Name),
+		(1, Success) => Call(2, Eq),
+		(1, Failure) => Exit(Failure),
+		(2, Success) => Call(3, AttValue),
+		(2, Failure) => Error(Error::Expected25Eq),
+		(3, Success) => Exit(Success),
+		(3, Failure) => Error(Error::Expected10AttValue),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -315,4 +330,6 @@ enum Error {
 	ExpectedStartTagEnd,
 	Expected42ETag,
 	ExpectedEndTagEnd,
+	Expected25Eq,
+	Expected10AttValue,
 }
