@@ -1,7 +1,7 @@
 use crate::buffer::{OutOfBoundsError, StrBuf, Utf8Error};
 use tap::Pipe;
 
-type NextFn = for<'a> fn(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a>;
+type NextFn = for<'a> fn(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a>;
 type NextFnR<'a> = Result<Next<'a>, OutOfBoundsError>;
 enum Next<'a> {
 	Exit(RetVal),
@@ -19,7 +19,7 @@ enum RetVal {
 use RetVal::*;
 
 /// [1]
-fn document<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+fn document<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => Call(1, prolog),
 		(1, Success) => Call(2, element),
@@ -33,7 +33,7 @@ fn document<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'
 }
 
 /// [3]
-fn S<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+fn S<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => match buffer
 			.shift_known_array(&[0x20])
@@ -63,7 +63,7 @@ fn S<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 }
 
 /// [15]
-fn Comment<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+fn Comment<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"<!--")? {
 			Some(comment_start) => Yield(1, Event::CommentStart(comment_start).into()),
@@ -115,7 +115,7 @@ fn Comment<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a
 }
 
 /// [22]
-fn prolog<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+fn prolog<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => Call(1, XMLDecl),
 		(1 | 2, Success) => Call(2, Misc),
@@ -129,7 +129,7 @@ fn prolog<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a>
 }
 
 /// [23]
-fn XMLDecl<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+fn XMLDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"<?xml")? {
 			Some(_) => Continue(1),
@@ -151,7 +151,7 @@ fn XMLDecl<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a
 }
 
 /// [24]
-fn VersionInfo<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+fn VersionInfo<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => Call(1, S),
 		(1, Success) => match buffer.shift_known_array(b"version")? {
@@ -187,7 +187,7 @@ fn VersionInfo<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFn
 /// [25]
 ///
 /// Never returns `Ok(Exit(Failure))`.
-fn Eq<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+fn Eq<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => Call(1, S),
 		(1, _) => match buffer.shift_known_array(b"=")? {
@@ -202,7 +202,7 @@ fn Eq<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 }
 
 /// [26]
-fn VersionNum<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+fn VersionNum<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"1.1")? {
 			Some(version) => Yield(1, Event::Version(version).into()),
@@ -214,7 +214,7 @@ fn VersionNum<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR
 }
 
 /// [27]
-fn Misc<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+fn Misc<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => Call(1, Comment),
 		(1, Success) => Exit(Success),
@@ -228,7 +228,7 @@ fn Misc<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 }
 
 /// [39], [40], [44]
-fn element<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+fn element<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"<")? {
 			Some(lt) => Yield(1, Event::StartTagStart(lt).into()),
@@ -258,7 +258,7 @@ fn element<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a
 }
 
 /// [42]
-fn ETag<'a>(buffer: &'a mut StrBuf, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+fn ETag<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"</")? {
 			Some(start) => Yield(1, Event::EndTagStart(start).into()),
