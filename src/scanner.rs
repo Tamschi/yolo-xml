@@ -80,6 +80,7 @@ fn Comment<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 						Error(Error::Utf8Error(error))
 					}
 					(valid, Ok(())) if valid.is_empty() => return Err(OutOfBoundsError::new()),
+					//BUG: Detect disallowed characters!
 					(valid, _) => {
 						if let Some(dashes_at) = valid.find("--") {
 							Yield(
@@ -109,6 +110,53 @@ fn Comment<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 			}
 		}
 		(2, _) => Exit(Success),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
+/// [16]
+fn PI<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => match buffer.shift_known_array(b"<?")? {
+			Some(start) => Yield(1, Event::PIStart(start).into()),
+			None => Exit(Failure),
+		},
+		(1, _) => Call(2, PITarget),
+		(2, Success) => Call(3, S),
+		(2, Failure) => Error(Error::Expected17PITarget),
+		(3, Success) => Continue(4),
+		(3, Failure) => match buffer.shift_known_array(b"?>")? {
+			Some(end) => Yield(5, Event::PIEnd(end).into()),
+			None => Error(Error::ExpectedWhitespaceOrPIEnd),
+		},
+		(4, _) => {
+			if let Some(end) = buffer.shift_known_array(b"?>")? {
+				Yield(5, Event::PIEnd(end).into())
+			} else {
+				match buffer.validate() {
+					(valid, Err(error @ Utf8Error)) if valid.is_empty() => {
+						Error(Error::Utf8Error(error))
+					}
+					(valid, Ok(())) if valid.is_empty() => return Err(OutOfBoundsError::new()),
+					//BUG: Detect disallowed characters!
+					(valid, _) => Yield(
+						4,
+						Event::PIChunk(
+							buffer
+								.shift_validated(if valid.ends_with("?") {
+									valid.len() - 1
+								} else {
+									valid.len()
+								})
+								.expect("unreachable"),
+						)
+						.into(),
+					),
+				}
+			}
+		}
+		(5, _) => Exit(Success),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -315,6 +363,9 @@ pub enum Event<'a> {
 	StartTagEnd(&'a mut [u8; 1]),
 	EndTagStart(&'a mut [u8; 2]),
 	EndTagEnd(&'a mut [u8; 1]),
+	PIStart(&'a mut [u8; 2]),
+	PIEnd(&'a mut [u8; 2]),
+	PIChunk(&'a mut str),
 }
 
 enum Error {
@@ -332,4 +383,6 @@ enum Error {
 	ExpectedEndTagEnd,
 	Expected25Eq,
 	Expected10AttValue,
+	Expected17PITarget,
+	ExpectedWhitespaceOrPIEnd,
 }
