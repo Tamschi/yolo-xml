@@ -204,6 +204,7 @@ fn Eq<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 /// [26]
 fn VersionNum<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
+		//BUG: Ensure this is terminated!
 		(0, _) => match buffer.shift_known_array(b"1.1")? {
 			Some(version) => Yield(1, Event::Version(version).into()),
 			None => Yield(0, Event_::DowngradeFrom1_1),
