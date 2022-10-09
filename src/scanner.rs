@@ -414,6 +414,25 @@ fn ETag<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> 
 	.pipe(Ok)
 }
 
+/// [68]
+fn EntityRef<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => match buffer.shift_known_array(b"&")? {
+			Some(start) => Yield(1, Event::EntityRefStart(start).into()),
+			None => Exit(Failure),
+		},
+		(1, _) => Call(2, Name),
+		(2, Success) => match buffer.shift_known_array(b";")? {
+			Some(end) => Yield(3, Event::EntityRefEnd(end).into()),
+			None => Error(Error::ExpectedLiteral(b";")),
+		},
+		(2, Failure) => Error(Error::Expected5Name),
+		(3, _) => Exit(Success),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
 /// [69]
 fn PEReference<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
@@ -462,6 +481,8 @@ pub enum Event<'a> {
 	DoctypedeclEnd(&'a mut [u8; 1]),
 	PEReferenceStart(&'a mut [u8; 1]),
 	PEReferenceEnd(&'a mut [u8; 1]),
+	EntityRefStart(&'a mut [u8; 1]),
+	EntityRefEnd(&'a mut [u8; 1]),
 }
 
 enum Error {
