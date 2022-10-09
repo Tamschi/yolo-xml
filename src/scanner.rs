@@ -133,7 +133,7 @@ fn XMLDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"<?xml")? {
 			Some(_) => Continue(1),
-			None => Yield(0, Event_::Reboot_Version_1_0),
+			None => Yield(0, Event_::RebootToVersion1_0),
 		},
 		(1, _) => Call(2, VersionInfo),
 		(2, Success) => Call(3, EncodingDecl),
