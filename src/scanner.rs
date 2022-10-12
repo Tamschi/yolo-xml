@@ -398,6 +398,29 @@ fn markupdecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFn
 	.pipe(Ok)
 }
 
+/// [30]
+fn extSubset<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => Call(1, TextDecl),
+		(1, _) => Call(2, extSubsetDecl),
+		(2, ret_val) => Exit(ret_val),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
+/// [31]
+fn extSubsetDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) | (1 | 2 | 3, Success) => Call(1, markupdecl),
+		(1, Failure) => Call(2, conditionalSect),
+		(2, Failure) => Call(3, DeclSep),
+		(3, Failure) => Exit(Failure),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
 /// [39], [40], [44]
 /// Start tokens: `<`
 fn element<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
