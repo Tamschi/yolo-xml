@@ -13,8 +13,8 @@ enum Next<'a> {
 use Next::*;
 
 enum RetVal {
-	Success,
-	Failure,
+	Accept,
+	Reject,
 }
 use RetVal::*;
 
@@ -22,11 +22,11 @@ use RetVal::*;
 fn document<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => Call(1, prolog),
-		(1, Success) => Call(2, element),
-		(2 | 3, Success) => Call(3, Misc),
-		(3, Failure) => Exit(Success),
-		(1, Failure) => Error(Error::Expected22Prolog),
-		(2, Failure) => Error(Error::Expected39Element),
+		(1, Accept) => Call(2, element),
+		(2 | 3, Accept) => Call(3, Misc),
+		(3, Reject) => Exit(Accept),
+		(1, Reject) => Error(Error::Expected22Prolog),
+		(2, Reject) => Error(Error::Expected39Element),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -45,7 +45,7 @@ fn S<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 			.transpose()?
 		{
 			Some(_) => Continue(1),
-			None => Exit(Failure),
+			None => Exit(Reject),
 		},
 		(1, _) => match buffer
 			.shift_known_array(&[0x20])
@@ -56,7 +56,7 @@ fn S<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 			.transpose()?
 		{
 			Some(_) => Continue(1),
-			None => Exit(Success),
+			None => Exit(Accept),
 		},
 		_ => unreachable!(),
 	}
@@ -69,7 +69,7 @@ fn Comment<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"<!--")? {
 			Some(comment_start) => Yield(1, Event::CommentStart(comment_start).into()),
-			None => Exit(Failure),
+			None => Exit(Reject),
 		},
 		(1, _) => {
 			if let Some(comment_end) = buffer.shift_known_array(b"-->")? {
@@ -111,7 +111,7 @@ fn Comment<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 				}
 			}
 		}
-		(2, _) => Exit(Success),
+		(2, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -122,13 +122,13 @@ fn PI<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"<?")? {
 			Some(start) => Yield(1, Event::PIStart(start).into()),
-			None => Exit(Failure),
+			None => Exit(Reject),
 		},
 		(1, _) => Call(2, PITarget),
-		(2, Success) => Call(3, S),
-		(2, Failure) => Error(Error::Expected17PITarget),
-		(3, Success) => Continue(4),
-		(3, Failure) => match buffer.shift_known_array(b"?>")? {
+		(2, Accept) => Call(3, S),
+		(2, Reject) => Error(Error::Expected17PITarget),
+		(3, Accept) => Continue(4),
+		(3, Reject) => match buffer.shift_known_array(b"?>")? {
 			Some(end) => Yield(5, Event::PIEnd(end).into()),
 			None => Error(Error::ExpectedWhitespaceOrPIEnd),
 		},
@@ -158,7 +158,7 @@ fn PI<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 				}
 			}
 		}
-		(5, _) => Exit(Success),
+		(5, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -169,11 +169,11 @@ fn PI<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 fn CDSect<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => Call(1, CDStart),
-		(1, Success) => Call(2, CData),
-		(1, Failure) => Exit(Failure),
-		(2, Success) => Call(3, CDEnd),
-		(3, Success) => Exit(Success),
-		(2 | 3, Failure) => {
+		(1, Accept) => Call(2, CData),
+		(1, Reject) => Exit(Reject),
+		(2, Accept) => Call(3, CDEnd),
+		(3, Accept) => Exit(Accept),
+		(2 | 3, Reject) => {
 			unreachable!("logically unreachable, unless the buffer is manipulated somehow")
 		}
 		_ => unreachable!(),
@@ -187,9 +187,9 @@ fn CDStart<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"<![CDATA[")? {
 			Some(start) => Yield(1, Event::CDStart(start).into()),
-			None => Exit(Failure),
+			None => Exit(Reject),
 		},
-		(1, _) => Exit(Success),
+		(1, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -201,9 +201,9 @@ fn CDEnd<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a>
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"]]>")? {
 			Some(end) => Yield(1, Event::CDEnd(end).into()),
-			None => Exit(Failure),
+			None => Exit(Reject),
 		},
-		(1, _) => Exit(Success),
+		(1, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -213,11 +213,11 @@ fn CDEnd<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a>
 fn prolog<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => Call(1, XMLDecl),
-		(1 | 2, Success) => Call(2, Misc),
-		(2, Failure) => Call(3, doctypedecl),
-		(3 | 4, Success) => Call(4, Misc),
-		(3 | 4, Failure) => Exit(Success),
-		(1, Failure) => unreachable!("should downgrade"),
+		(1 | 2, Accept) => Call(2, Misc),
+		(2, Reject) => Call(3, doctypedecl),
+		(3 | 4, Accept) => Call(4, Misc),
+		(3 | 4, Reject) => Exit(Accept),
+		(1, Reject) => unreachable!("should downgrade"),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -232,13 +232,13 @@ fn XMLDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 			None => Yield(0, Event_::RebootToVersion1_0),
 		},
 		(1, _) => Call(2, VersionInfo),
-		(2, Success) => Call(3, EncodingDecl),
-		(2, Failure) => Error(Error::Expected24VersionInfo),
+		(2, Accept) => Call(3, EncodingDecl),
+		(2, Reject) => Error(Error::Expected24VersionInfo),
 		(3, _) => Call(4, SDDecl),
 		(4, _) => Call(5, S),
 		(5, _) => match buffer.shift_known_array(b"?>")? {
-			Some(_) => Success,
-			None => Failure,
+			Some(_) => Accept,
+			None => Reject,
 		}
 		.pipe(Exit),
 		_ => unreachable!(),
@@ -250,31 +250,31 @@ fn XMLDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 fn VersionInfo<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => Call(1, S),
-		(1, Success) => match buffer.shift_known_array(b"version")? {
+		(1, Accept) => match buffer.shift_known_array(b"version")? {
 			Some(_) => Continue(2),
 			None => Error(Error::ExpectedLiteral(b"version")),
 		},
-		(1, Failure) => Exit(Failure),
+		(1, Reject) => Exit(Reject),
 		(2, _) => Call(3, Eq),
-		(3, Success) => match buffer.shift_known_array(b"'")? {
+		(3, Accept) => match buffer.shift_known_array(b"'")? {
 			Some(_) => Continue(4),
 			None => match buffer.shift_known_array(b"\"")? {
 				Some(_) => Continue(6),
 				None => Error(Error::ExpectedQuote),
 			},
 		},
-		(3, Failure) => unreachable!("`Eq` shouldn't fail."),
+		(3, Reject) => unreachable!("`Eq` shouldn't fail."),
 		(4, _) => Call(5, VersionNum),
-		(5, Success) => match buffer.shift_known_array(b"'")? {
-			Some(_) => Exit(Success),
+		(5, Accept) => match buffer.shift_known_array(b"'")? {
+			Some(_) => Exit(Accept),
 			None => Error(Error::ExpectedLiteral(b"'")),
 		},
 		(6, _) => Call(7, VersionNum),
-		(7, Success) => match buffer.shift_known_array(b"\"")? {
-			Some(_) => Exit(Success),
+		(7, Accept) => match buffer.shift_known_array(b"\"")? {
+			Some(_) => Exit(Accept),
 			None => Error(Error::ExpectedLiteral(b"\"")),
 		},
-		(5 | 7, Failure) => unreachable!("should downgrade"),
+		(5 | 7, Reject) => unreachable!("should downgrade"),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -292,7 +292,7 @@ fn Eq<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 			None => Error(Error::ExpectedLiteral(b"=")),
 		},
 		(2, _) => Call(3, S),
-		(3, _) => Exit(Success),
+		(3, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -315,10 +315,10 @@ fn VersionNum<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFn
 fn Misc<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => Call(1, Comment),
-		(1, Success) => Exit(Success),
-		(1, Failure) => Call(2, PI),
-		(2, Success) => Exit(Success),
-		(2, Failure) => Call(3, S),
+		(1, Accept) => Exit(Accept),
+		(1, Reject) => Call(2, PI),
+		(2, Accept) => Exit(Accept),
+		(2, Reject) => Call(3, S),
 		(3, either) => Exit(either),
 		_ => unreachable!(),
 	}
@@ -330,30 +330,30 @@ fn doctypedecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextF
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"<!DOCTYPE")? {
 			Some(start) => Yield(1, Event::DoctypedeclStart(start).into()),
-			None => Exit(Failure),
+			None => Exit(Reject),
 		},
 		(1, _) => Call(2, S),
-		(2, Success) => Call(3, Name),
-		(2, Failure) => Error(Error::Expected3Whitespace),
-		(3, Success) => Call(4, S),
-		(3, Failure) => Error(Error::Expected5Name),
-		(4, Success) => Call(5, ExternalID),
-		(4, Failure) => Continue(6),
+		(2, Accept) => Call(3, Name),
+		(2, Reject) => Error(Error::Expected3Whitespace),
+		(3, Accept) => Call(4, S),
+		(3, Reject) => Error(Error::Expected5Name),
+		(4, Accept) => Call(5, ExternalID),
+		(4, Reject) => Continue(6),
 		(5, _) => Call(6, S),
 		(6, _) => match buffer.shift_known_array(b"[")? {
 			Some(_) => Call(7, intSubset),
 			None => Continue(8),
 		},
-		(7, Success) => match buffer.shift_known_array(b"]")? {
+		(7, Accept) => match buffer.shift_known_array(b"]")? {
 			Some(_) => Call(8, S),
 			None => Error(Error::ExpectedLiteral(b"]")),
 		},
-		(7, Failure) => Error(Error::Expected28bIntSubset),
+		(7, Reject) => Error(Error::Expected28bIntSubset),
 		(8, _) => match buffer.shift_known_array(b">")? {
 			Some(end) => Yield(9, Event::DoctypedeclEnd(end).into()),
 			None => Error(Error::ExpectedLiteral(b">")),
 		},
-		(9, _) => Exit(Success),
+		(9, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -363,9 +363,9 @@ fn doctypedecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextF
 fn DeclSep<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => Call(1, PEReference),
-		(1, Failure) => Call(2, S),
-		(2, Failure) => Exit(Failure),
-		(1 | 2, Success) => Exit(Success),
+		(1, Reject) => Call(2, S),
+		(2, Reject) => Exit(Reject),
+		(1 | 2, Accept) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -374,9 +374,9 @@ fn DeclSep<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 /// [28b]
 fn intSubset<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
-		(0, _) | (1 | 2, Success) => Call(1, markupdecl),
-		(1, Failure) => Call(2, DeclSep),
-		(2, Failure) => Exit(Success),
+		(0, _) | (1 | 2, Accept) => Call(1, markupdecl),
+		(1, Reject) => Call(2, DeclSep),
+		(2, Reject) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -386,13 +386,13 @@ fn intSubset<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR
 fn markupdecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => Call(1, elementdecl),
-		(1, Failure) => Call(2, AttlistDecl),
-		(2, Failure) => Call(3, EntityDecl),
-		(3, Failure) => Call(4, NotationDecl),
-		(4, Failure) => Call(5, PI),
-		(5, Failure) => Call(6, Comment),
-		(6, Failure) => Exit(Failure),
-		(1 | 2 | 3 | 4 | 5 | 6, Success) => Exit(Success),
+		(1, Reject) => Call(2, AttlistDecl),
+		(2, Reject) => Call(3, EntityDecl),
+		(3, Reject) => Call(4, NotationDecl),
+		(4, Reject) => Call(5, PI),
+		(5, Reject) => Call(6, Comment),
+		(6, Reject) => Exit(Reject),
+		(1 | 2 | 3 | 4 | 5 | 6, Accept) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -412,10 +412,10 @@ fn extSubset<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR
 /// [31]
 fn extSubsetDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
-		(0, _) | (1 | 2 | 3, Success) => Call(1, markupdecl),
-		(1, Failure) => Call(2, conditionalSect),
-		(2, Failure) => Call(3, DeclSep),
-		(3, Failure) => Exit(Failure),
+		(0, _) | (1 | 2 | 3, Accept) => Call(1, markupdecl),
+		(1, Reject) => Call(2, conditionalSect),
+		(2, Reject) => Call(3, DeclSep),
+		(3, Reject) => Exit(Reject),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -427,14 +427,14 @@ fn element<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"<")? {
 			Some(lt) => Yield(1, Event::StartTagStart(lt).into()),
-			None => Exit(Failure),
+			None => Exit(Reject),
 		},
 		(1, _) => Call(2, Name),
-		(2, Success) => Call(3, S),
-		(2, Failure) => Error(Error::Expected5Name),
-		(3, Success) => Call(4, Attribute),
-		(4, Success) => Call(3, S),
-		(3 | 4, Failure) => match buffer.shift_known_array(b">")? {
+		(2, Accept) => Call(3, S),
+		(2, Reject) => Error(Error::Expected5Name),
+		(3, Accept) => Call(4, Attribute),
+		(4, Accept) => Call(3, S),
+		(3 | 4, Reject) => match buffer.shift_known_array(b">")? {
 			Some(end) => Yield(5, Event::StartTagEnd(end).into()),
 			None => match buffer.shift_known_array(b"/>")? {
 				Some(empty_end) => Yield(8, Event::StartTagEndEmpty(empty_end).into()),
@@ -442,11 +442,11 @@ fn element<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 			},
 		},
 		(5, _) => Call(6, Content),
-		(6, Success) => Call(7, ETag),
-		(6, Failure) => unreachable!(),
-		(7, Success) => Exit(Success),
-		(7, Failure) => Error(Error::Expected42ETag),
-		(8, _) => Exit(Success),
+		(6, Accept) => Call(7, ETag),
+		(6, Reject) => unreachable!(),
+		(7, Accept) => Exit(Accept),
+		(7, Reject) => Error(Error::Expected42ETag),
+		(8, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -457,12 +457,12 @@ fn element<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 fn Attribute<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => Call(1, Name),
-		(1, Success) => Call(2, Eq),
-		(1, Failure) => Exit(Failure),
-		(2, Success) => Call(3, AttValue),
-		(2, Failure) => Error(Error::Expected25Eq),
-		(3, Success) => Exit(Success),
-		(3, Failure) => Error(Error::Expected10AttValue),
+		(1, Accept) => Call(2, Eq),
+		(1, Reject) => Exit(Reject),
+		(2, Accept) => Call(3, AttValue),
+		(2, Reject) => Error(Error::Expected25Eq),
+		(3, Accept) => Exit(Accept),
+		(3, Reject) => Error(Error::Expected10AttValue),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -474,16 +474,16 @@ fn ETag<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> 
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"</")? {
 			Some(start) => Yield(1, Event::EndTagStart(start).into()),
-			None => Exit(Failure),
+			None => Exit(Reject),
 		},
 		(1, _) => Call(2, Name),
-		(2, Success) => Call(3, S),
-		(2, Failure) => Error(Error::Expected5Name),
+		(2, Accept) => Call(3, S),
+		(2, Reject) => Error(Error::Expected5Name),
 		(3, _) => match buffer.shift_known_array(b">")? {
 			Some(end) => Yield(4, Event::EndTagEnd(end).into()),
 			None => Error(Error::ExpectedEndTagEnd),
 		},
-		(4, _) => Exit(Success),
+		(4, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -494,20 +494,20 @@ fn AttlistDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextF
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"<!ATTLIST")? {
 			Some(start) => Yield(1, Event::AttlistDeclStart(start).into()),
-			None => Exit(Failure),
+			None => Exit(Reject),
 		},
 		(1, _) => Call(2, S),
-		(2, Success) => Call(3, Name),
-		(2, Failure) => Error(Error::Expected3Whitespace),
-		(3, Success) => Call(4, AttDef),
-		(3, Failure) => Error(Error::Expected5Name),
-		(4, Success) => Call(4, AttDef),
-		(4, Failure) => Call(5, S),
+		(2, Accept) => Call(3, Name),
+		(2, Reject) => Error(Error::Expected3Whitespace),
+		(3, Accept) => Call(4, AttDef),
+		(3, Reject) => Error(Error::Expected5Name),
+		(4, Accept) => Call(4, AttDef),
+		(4, Reject) => Call(5, S),
 		(5, _) => match buffer.shift_known_array(b">")? {
 			Some(end) => Yield(6, Event::AttlistDeclEnd(end).into()),
 			None => Error(Error::ExpectedAttlistDeclEnd),
 		},
-		(6, _) => Exit(Success),
+		(6, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -520,9 +520,9 @@ fn AttlistDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextF
 fn Reference<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
 		(0, _) => Call(1, CharRef),
-		(1, Failure) => Call(2, EntityRef),
-		(2, Failure) => Exit(Failure),
-		(1 | 2, Success) => Exit(Success),
+		(1, Reject) => Call(2, EntityRef),
+		(2, Reject) => Exit(Reject),
+		(1 | 2, Accept) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -534,15 +534,15 @@ fn EntityRef<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"&")? {
 			Some(start) => Yield(1, Event::EntityRefStart(start).into()),
-			None => Exit(Failure),
+			None => Exit(Reject),
 		},
 		(1, _) => Call(2, Name),
-		(2, Success) => match buffer.shift_known_array(b";")? {
+		(2, Accept) => match buffer.shift_known_array(b";")? {
 			Some(end) => Yield(3, Event::EntityRefEnd(end).into()),
 			None => Error(Error::ExpectedLiteral(b";")),
 		},
-		(2, Failure) => Error(Error::Expected5Name),
-		(3, _) => Exit(Success),
+		(2, Reject) => Error(Error::Expected5Name),
+		(3, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -554,15 +554,15 @@ fn PEReference<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextF
 	match (state, ret_val) {
 		(0, _) => match buffer.shift_known_array(b"%")? {
 			Some(start) => Yield(1, Event::PEReferenceStart(start).into()),
-			None => Exit(Failure),
+			None => Exit(Reject),
 		},
 		(1, _) => Call(2, Name),
-		(2, Success) => match buffer.shift_known_array(b";")? {
+		(2, Accept) => match buffer.shift_known_array(b";")? {
 			Some(end) => Yield(3, Event::PEReferenceEnd(end).into()),
 			None => Error(Error::ExpectedLiteral(b";")),
 		},
-		(2, Failure) => Error(Error::Expected5Name),
-		(3, _) => Exit(Success),
+		(2, Reject) => Error(Error::Expected5Name),
+		(3, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
