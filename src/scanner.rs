@@ -64,10 +64,7 @@ impl Scanner {
 				.call_stack
 				.last()
 				.expect("Called resume while the call stack was empty.")(
-				unsafe {
-					//FIXME: Is this possible more nicely?
-					&mut *(buffer as *mut _)
-				},
+				buffer,
 				*self.states.last().expect("unreachable"),
 				last_ret_val,
 			)?;
