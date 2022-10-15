@@ -160,48 +160,43 @@ fn Comment<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 			Some(comment_start) => Yield(1, Event::CommentStart(comment_start).into()),
 			None => Exit(Reject),
 		},
-		(1, _) => buffer
-			.shift_known_array(b"-->")?
-			.map(|comment_end| Yield(2, Event::CommentEnd(comment_end).into()))
-			.unwrap_or(Continue(10)),
-		(10, _) => buffer
-			.filled()
-			.starts_with(b"--")
-			.then_some(Error(Error::UnexpectedSequence(b"--")))
-			.unwrap_or(Continue(11)),
-		(11, _) => {
-			match buffer.validate() {
-				(valid, Err(error)) if valid.is_empty() => Error(Error::Utf8Error(error)),
-				(valid, Ok(())) if valid.is_empty() => return Err(MoreInputRequired::new()),
-				//BUG: Detect disallowed characters!
-				(valid, _) => {
-					if let Some(dashes_at) = valid.find("--") {
-						Yield(
-							1,
-							Event::CommentChunk(
-								buffer.shift_validated(dashes_at).expect("unreachable"),
+		(1, _) => {
+			if let Some(comment_end) = buffer.shift_known_array(b"-->")? {
+				Yield(2, Event::CommentEnd(comment_end).into())
+			} else if buffer.filled().starts_with(b"--") {
+				Error(Error::UnexpectedSequence(b"--"))
+			} else {
+				match buffer.validate() {
+					(valid, Err(error)) if valid.is_empty() => Error(Error::Utf8Error(error)),
+					(valid, Ok(())) if valid.is_empty() => return Err(MoreInputRequired::new()),
+					//BUG: Detect disallowed characters!
+					(valid, _) => {
+						if let Some(dashes_at) = valid.find("--") {
+							Yield(
+								1,
+								Event::CommentChunk(
+									buffer.shift_validated(dashes_at).expect("unreachable"),
+								)
+								.into(),
 							)
-							.into(),
-						)
-					} else {
-						Continue(12)
+						} else {
+							let chunk_len = if valid.ends_with('-') {
+								valid.len() - "-".len()
+							} else {
+								valid.len()
+							};
+							Yield(
+								1,
+								Event::CommentChunk(
+									buffer.shift_validated(chunk_len).expect("unreachable"),
+								)
+								.into(),
+							)
+						}
 					}
 				}
 			}
 		}
-		(12, _) => Yield(
-			1,
-			Event::CommentChunk(
-				buffer
-					.shift_validated(if buffer.validated().ends_with("-") {
-						buffer.validated().len() - "-".len()
-					} else {
-						buffer.validated().len()
-					})
-					.expect("unreachable"),
-			)
-			.into(),
-		),
 		(2, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
