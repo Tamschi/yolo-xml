@@ -489,6 +489,30 @@ fn ETag<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> 
 	.pipe(Ok)
 }
 
+/// [52]
+fn AttlistDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => match buffer.shift_known_array(b"<!ATTLIST")? {
+			Some(start) => Yield(1, Event::AttlistDeclStart(start).into()),
+			None => Exit(Failure),
+		},
+		(1, _) => Call(2, S),
+		(2, Success) => Call(3, Name),
+		(2, Failure) => Error(Error::Expected3Whitespace),
+		(3, Success) => Call(4, AttDef),
+		(3, Failure) => Error(Error::Expected5Name),
+		(4, Success) => Call(4, AttDef),
+		(4, Failure) => Call(5, S),
+		(5, _) => match buffer.shift_known_array(b">")? {
+			Some(end) => Yield(6, Event::AttlistDeclEnd(end).into()),
+			None => Error(Error::ExpectedAttlistDeclEnd),
+		},
+		(6, _) => Exit(Success),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
 /// [67]
 /// Start tokens: `&`
 ///
@@ -577,6 +601,8 @@ pub enum Event<'a> {
 	EntityRefEnd(&'a mut [u8; 1]),
 	CDStart(&'a mut [u8; 9]),
 	CDEnd(&'a mut [u8; 3]),
+	AttlistDeclStart(&'a mut [u8; 9]),
+	AttlistDeclEnd(&'a mut [u8; 1]),
 }
 
 enum Error {
@@ -597,4 +623,5 @@ enum Error {
 	Expected17PITarget,
 	ExpectedWhitespaceOrPIEnd,
 	Expected28bIntSubset,
+	ExpectedAttlistDeclEnd,
 }
