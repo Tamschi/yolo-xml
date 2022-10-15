@@ -1,8 +1,8 @@
-use crate::buffer::{OutOfBoundsError, StrBuf, Utf8Error};
+use crate::buffer::{Indeterminate, StrBuf, Utf8Error};
 use tap::Pipe;
 
 type NextFn = for<'a> fn(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a>;
-type NextFnR<'a> = Result<Next<'a>, OutOfBoundsError>;
+type NextFnR<'a> = Result<Next<'a>, MoreInputRequired>;
 enum Next<'a> {
 	Exit(RetVal),
 	Call(u8, NextFn),
@@ -18,15 +18,31 @@ enum RetVal {
 }
 use RetVal::*;
 
-struct Scanner {
+pub struct Scanner {
 	depth_limit: usize,
 	states: Vec<u8>,
 	call_stack: Vec<NextFn>,
 }
 
-enum ScannerError {
+#[derive(Debug)]
+pub enum ScannerError {
 	DepthLimitExceeded,
 	XmlError(Error),
+}
+
+#[derive(Debug)]
+pub struct MoreInputRequired {
+	_private: (),
+}
+impl MoreInputRequired {
+	pub(crate) fn new() -> Self {
+		Self { _private: () }
+	}
+}
+impl From<Indeterminate> for MoreInputRequired {
+	fn from(_: Indeterminate) -> Self {
+		Self::new()
+	}
 }
 
 impl Scanner {
@@ -41,14 +57,17 @@ impl Scanner {
 	pub fn resume<'a>(
 		&mut self,
 		buffer: &mut StrBuf<'a>,
-	) -> Result<Result<Option<Event>, ScannerError>, OutOfBoundsError> {
+	) -> Result<Result<Option<Event<'a>>, ScannerError>, MoreInputRequired> {
 		let mut last_ret_val = Accept;
 		loop {
 			let next = self
 				.call_stack
 				.last()
 				.expect("Called resume while the call stack was empty.")(
-				buffer,
+				unsafe {
+					//FIXME: Is this possible more nicely?
+					&mut *(buffer as *mut _)
+				},
 				*self.states.last().expect("unreachable"),
 				last_ret_val,
 			)?;
@@ -71,7 +90,7 @@ impl Scanner {
 				Yield(state, internal_event) => {
 					*self.states.last_mut().expect("unreachable") = state;
 					match internal_event {
-						Event_::Public(event) => break Ok(Some(event)),
+						Event_::Public(event) => return Ok(Ok(Some(event))),
 						Event_::RebootToVersion1_0 => todo!(),
 						Event_::DowngradeFrom1_1 => todo!(),
 					}
@@ -102,31 +121,35 @@ fn document<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<
 /// Start tokens: *0x20* | *0x9* | *0xD* | *0xA*
 fn S<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
-		(0, _) => match buffer
-			.shift_known_array(&[0x20])
-			.transpose()
-			.or_else(|| buffer.shift_known_array(&[0x9]).transpose())
-			.or_else(|| buffer.shift_known_array(&[0xD]).transpose())
-			.or_else(|| buffer.shift_known_array(&[0xA]).transpose())
-			.transpose()?
+		(0, _) => match buffer.shift_known_array(&[0x20])?.is_some()
+			|| buffer.shift_known_array(&[0x9])?.is_some()
+			|| buffer.shift_known_array(&[0xD])?.is_some()
+			|| buffer.shift_known_array(&[0xA])?.is_some()
 		{
-			Some(_) => Continue(1),
-			None => Exit(Reject),
+			true => Continue(1),
+			false => Exit(Reject),
 		},
-		(1, _) => match buffer
-			.shift_known_array(&[0x20])
-			.transpose()
-			.or_else(|| buffer.shift_known_array(&[0x9]).transpose())
-			.or_else(|| buffer.shift_known_array(&[0xD]).transpose())
-			.or_else(|| buffer.shift_known_array(&[0xA]).transpose())
-			.transpose()?
+		(1, _) => match buffer.shift_known_array(&[0x20])?.is_some()
+			|| buffer.shift_known_array(&[0x9])?.is_some()
+			|| buffer.shift_known_array(&[0xD])?.is_some()
+			|| buffer.shift_known_array(&[0xA])?.is_some()
 		{
-			Some(_) => Continue(1),
-			None => Exit(Accept),
+			true => Continue(1),
+			false => Exit(Accept),
 		},
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
+}
+
+/// [5]
+fn Name<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
+}
+
+/// [10]
+fn AttValue<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
 }
 
 /// [15]
@@ -137,46 +160,48 @@ fn Comment<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 			Some(comment_start) => Yield(1, Event::CommentStart(comment_start).into()),
 			None => Exit(Reject),
 		},
-		(1, _) => {
-			if let Some(comment_end) = buffer.shift_known_array(b"-->")? {
-				Yield(2, Event::CommentEnd(comment_end).into())
-			} else if buffer.filled().starts_with(b"--") {
-				Error(Error::UnexpectedSequence(b"--"))
-			} else {
-				match buffer.validate() {
-					(valid, Err(error @ Utf8Error)) if valid.is_empty() => {
-						Error(Error::Utf8Error(error))
-					}
-					(valid, Ok(())) if valid.is_empty() => return Err(OutOfBoundsError::new()),
-					//BUG: Detect disallowed characters!
-					(valid, _) => {
-						if let Some(dashes_at) = valid.find("--") {
-							Yield(
-								1,
-								Event::CommentChunk(
-									buffer.shift_validated(dashes_at).expect("unreachable"),
-								)
-								.into(),
+		(1, _) => buffer
+			.shift_known_array(b"-->")?
+			.map(|comment_end| Yield(2, Event::CommentEnd(comment_end).into()))
+			.unwrap_or(Continue(10)),
+		(10, _) => buffer
+			.filled()
+			.starts_with(b"--")
+			.then_some(Error(Error::UnexpectedSequence(b"--")))
+			.unwrap_or(Continue(11)),
+		(11, _) => {
+			match buffer.validate() {
+				(valid, Err(error)) if valid.is_empty() => Error(Error::Utf8Error(error)),
+				(valid, Ok(())) if valid.is_empty() => return Err(MoreInputRequired::new()),
+				//BUG: Detect disallowed characters!
+				(valid, _) => {
+					if let Some(dashes_at) = valid.find("--") {
+						Yield(
+							1,
+							Event::CommentChunk(
+								buffer.shift_validated(dashes_at).expect("unreachable"),
 							)
-						} else {
-							Yield(
-								1,
-								Event::CommentChunk(
-									buffer
-										.shift_validated(if valid.ends_with("-") {
-											valid.len() - "-".len()
-										} else {
-											valid.len()
-										})
-										.expect("unreachable"),
-								)
-								.into(),
-							)
-						}
+							.into(),
+						)
+					} else {
+						Continue(12)
 					}
 				}
 			}
 		}
+		(12, _) => Yield(
+			1,
+			Event::CommentChunk(
+				buffer
+					.shift_validated(if buffer.validated().ends_with("-") {
+						buffer.validated().len() - "-".len()
+					} else {
+						buffer.validated().len()
+					})
+					.expect("unreachable"),
+			)
+			.into(),
+		),
 		(2, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
@@ -202,32 +227,37 @@ fn PI<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 			if let Some(end) = buffer.shift_known_array(b"?>")? {
 				Yield(5, Event::PIEnd(end).into())
 			} else {
-				match buffer.validate() {
-					(valid, Err(error @ Utf8Error)) if valid.is_empty() => {
-						Error(Error::Utf8Error(error))
-					}
-					(valid, Ok(())) if valid.is_empty() => return Err(OutOfBoundsError::new()),
-					//BUG: Detect disallowed characters!
-					(valid, _) => Yield(
-						4,
-						Event::PIChunk(
-							buffer
-								.shift_validated(if valid.ends_with("?") {
-									valid.len() - 1
-								} else {
-									valid.len()
-								})
-								.expect("unreachable"),
-						)
-						.into(),
-					),
-				}
+				Continue(41)
 			}
 		}
+		(41, _) => match buffer.validate() {
+			(valid, Err(error)) if valid.is_empty() => Error(Error::Utf8Error(error)),
+			(valid, Ok(())) if valid.is_empty() => return Err(MoreInputRequired::new()),
+			//BUG: Detect disallowed characters!
+			(_valid, _) => Continue(42),
+		},
+		(42, _) => Yield(
+			4,
+			Event::PIChunk(
+				buffer
+					.shift_validated(if buffer.validated().ends_with("?") {
+						buffer.validated().len() - 1
+					} else {
+						buffer.validated().len()
+					})
+					.expect("unreachable"),
+			)
+			.into(),
+		),
 		(5, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
+}
+
+/// [17]
+fn PITarget<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
 }
 
 /// [18]
@@ -259,6 +289,11 @@ fn CDStart<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
+}
+
+/// [20]
+fn CData<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
 }
 
 /// [21]
@@ -298,8 +333,10 @@ fn XMLDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 			None => Yield(0, Event_::RebootToVersion1_0),
 		},
 		(1, _) => Call(2, VersionInfo),
-		(2, Accept) => Call(3, EncodingDecl),
+		(2, Accept) => Call(1, S),
 		(2, Reject) => Error(Error::Expected24VersionInfo),
+		(21, Accept) => Call(3, EncodingDecl_minus_initial_S),
+		//TODO
 		(3, _) => Call(4, SDDecl),
 		(4, _) => Call(5, S),
 		(5, _) => match buffer.shift_known_array(b"?>")? {
@@ -372,6 +409,7 @@ fn VersionNum<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFn
 			Some(version) => Yield(1, Event::Version(version).into()),
 			None => Yield(0, Event_::DowngradeFrom1_1),
 		},
+		(1, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
@@ -487,6 +525,11 @@ fn extSubsetDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> Nex
 	.pipe(Ok)
 }
 
+/// [32]
+fn SDDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
+}
+
 /// [39], [40], [44]
 /// Start tokens: `<`
 fn element<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
@@ -502,12 +545,13 @@ fn element<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'
 		(4, Accept) => Call(3, S),
 		(3 | 4, Reject) => match buffer.shift_known_array(b">")? {
 			Some(end) => Yield(5, Event::StartTagEnd(end).into()),
-			None => match buffer.shift_known_array(b"/>")? {
-				Some(empty_end) => Yield(8, Event::StartTagEndEmpty(empty_end).into()),
-				None => Error(Error::ExpectedStartTagEnd),
-			},
+			None => Continue(34),
 		},
-		(5, _) => Call(6, Content),
+		(34, _) => match buffer.shift_known_array(b"/>")? {
+			Some(empty_end) => Yield(8, Event::StartTagEndEmpty(empty_end).into()),
+			None => Error(Error::ExpectedStartTagEnd),
+		},
+		(5, _) => Call(6, content),
 		(6, Accept) => Call(7, ETag),
 		(6, Reject) => unreachable!(),
 		(7, Accept) => Exit(Accept),
@@ -555,6 +599,16 @@ fn ETag<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> 
 	.pipe(Ok)
 }
 
+/// [43]
+fn content<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
+}
+
+/// [45]
+fn elementdecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
+}
+
 /// [52]
 fn AttlistDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
@@ -577,6 +631,21 @@ fn AttlistDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextF
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
+}
+
+/// [53]
+fn AttDef<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
+}
+
+/// [61]
+fn conditionalSect<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
+}
+
+/// [66]
+fn CharRef<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
 }
 
 /// [67]
@@ -634,6 +703,44 @@ fn PEReference<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextF
 	.pipe(Ok)
 }
 
+/// [70]
+fn EntityDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
+}
+
+/// [75]
+fn ExternalID<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
+}
+
+/// [77]
+fn TextDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
+}
+
+/// [80]
+fn EncodingDecl_minus_initial_S<'a>(
+	buffer: &mut StrBuf<'a>,
+	state: u8,
+	ret_val: RetVal,
+) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => match buffer.shift_known_array(b"encoding")? {
+			Some(_) => Call(1, Eq),
+			None => Exit(Reject),
+		},
+		(1, Accept) => todo!(),
+		(1, Reject) => Error(Error::Expected25Eq),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
+/// [82]
+fn NotationDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
+}
+
 enum Event_<'a> {
 	Public(Event<'a>),
 	RebootToVersion1_0,
@@ -645,6 +752,7 @@ impl<'a> From<Event<'a>> for Event_<'a> {
 	}
 }
 
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Event<'a> {
 	Version(&'a mut [u8]),
@@ -671,7 +779,8 @@ pub enum Event<'a> {
 	AttlistDeclEnd(&'a mut [u8; 1]),
 }
 
-enum Error {
+#[derive(Debug)]
+pub enum Error {
 	ExpectedLiteral(&'static [u8]),
 	ExpectedQuote,
 	Expected3Whitespace,

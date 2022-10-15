@@ -50,9 +50,7 @@ impl<'a> StrBuf<'a> {
 			validated: 0,
 		}
 	}
-}
 
-impl StrBuf<'_> {
 	#[must_use]
 	pub fn validated(&self) -> &str {
 		unsafe { from_utf8_unchecked(&*(addr_of!(self.memory[0..self.validated]) as *const [u8])) }
@@ -142,7 +140,7 @@ impl StrBuf<'_> {
 		self.validated = 0;
 	}
 
-	pub fn shift_validated(&mut self, len: usize) -> Result<&mut str, OutOfBoundsError> {
+	pub fn shift_validated(&mut self, len: usize) -> Result<&'a mut str, OutOfBoundsError> {
 		if self.validated < len {
 			Err(OutOfBoundsError::new())
 		} else {
@@ -155,7 +153,7 @@ impl StrBuf<'_> {
 		}
 	}
 
-	pub fn shift_filled(&mut self, len: usize) -> Result<&mut [u8], OutOfBoundsError> {
+	pub fn shift_filled(&mut self, len: usize) -> Result<&'a mut [u8], OutOfBoundsError> {
 		if self.filled < len {
 			Err(OutOfBoundsError::new())
 		} else {
@@ -176,10 +174,10 @@ impl StrBuf<'_> {
 	pub fn shift_known_array<const LEN: usize>(
 		&mut self,
 		data: &[u8; LEN],
-	) -> Result<Option<&mut [u8; LEN]>, OutOfBoundsError> {
+	) -> Result<Option<&'a mut [u8; LEN]>, Indeterminate> {
 		if self.filled < LEN {
 			if *self.filled() == data[..self.filled] {
-				Err(OutOfBoundsError::new())
+				Err(Indeterminate::new())
 			} else {
 				Ok(None)
 			}
@@ -188,8 +186,14 @@ impl StrBuf<'_> {
 				self.validated = self.validated.saturating_sub(LEN);
 				self.filled -= LEN;
 				self.initialized -= LEN;
-				let (skipped, memory) = self.memory.split_array_mut();
-				Some(unsafe { &mut *(skipped as *mut [MaybeUninit<u8>; LEN]).cast::<[u8; LEN]>() })
+				let (skipped, memory) = self.memory.split_at_mut(LEN);
+				self.memory = unsafe { &mut *(memory as *mut _) };
+				Some(unsafe {
+					&mut *(skipped
+						.try_conv::<&mut [MaybeUninit<u8>; LEN]>()
+						.expect("unreachable") as *mut [MaybeUninit<u8>; LEN])
+						.cast::<[u8; LEN]>()
+				})
 			} else {
 				None
 			}
@@ -207,10 +211,10 @@ impl StrBuf<'_> {
 		self.memory[0].as_mut_ptr()..self.memory[self.filled].as_mut_ptr()
 	}
 
-	pub fn clone_into<'a>(
+	pub fn clone_into<'b>(
 		&self,
-		memory: &'a mut [MaybeUninit<u8>],
-	) -> Result<StrBuf<'a>, OutOfBoundsError> {
+		memory: &'b mut [MaybeUninit<u8>],
+	) -> Result<StrBuf<'b>, OutOfBoundsError> {
 		if self.filled > memory.len() {
 			Err(OutOfBoundsError::new())
 		} else {
@@ -282,10 +286,19 @@ pub struct Utf8Error {
 #[derive(Debug, Error, Diagnostic)]
 #[error("Tried to consume or skip data past the amount currently available.")]
 pub struct OutOfBoundsError {
-	private: (),
+	_private: (),
 }
 impl OutOfBoundsError {
 	pub(crate) fn new() -> Self {
-		Self { private: () }
+		Self { _private: () }
+	}
+}
+
+pub struct Indeterminate {
+	_private: (),
+}
+impl Indeterminate {
+	pub(crate) fn new() -> Self {
+		Self { _private: () }
 	}
 }
