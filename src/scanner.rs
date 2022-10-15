@@ -18,6 +18,72 @@ enum RetVal {
 }
 use RetVal::*;
 
+struct Scanner {
+	depth_limit: usize,
+	states: Vec<u8>,
+	call_stack: Vec<NextFn>,
+}
+
+enum ScannerError {
+	DepthLimitExceeded,
+	XmlError(Error),
+}
+
+impl Scanner {
+	pub fn new(depth_limit: usize) -> Self {
+		Self {
+			depth_limit,
+			states: vec![0],
+			call_stack: vec![document],
+		}
+	}
+
+	pub fn resume<'a>(
+		&mut self,
+		buffer: &mut StrBuf<'a>,
+	) -> Result<Result<Option<Event>, ScannerError>, OutOfBoundsError> {
+		let mut last_ret_val = Accept;
+		loop {
+			let next = self
+				.call_stack
+				.last()
+				.expect("Called resume while the call stack was empty.")(
+				buffer,
+				*self.states.last().expect("unreachable"),
+				last_ret_val,
+			)?;
+			// Not strictly necessary, but in case there's a bug this makes it reliably work/not work.
+			last_ret_val = Accept;
+			match next {
+				Exit(ret_val) => {
+					last_ret_val = ret_val;
+					self.states.pop();
+					self.call_stack.pop();
+				}
+				Call(state, callee) => {
+					if self.states.len() >= self.depth_limit {
+						break Err(ScannerError::DepthLimitExceeded);
+					}
+					*self.states.last_mut().expect("unreachable") = state;
+					self.states.push(0);
+					self.call_stack.push(callee);
+				}
+				Yield(state, internal_event) => {
+					*self.states.last_mut().expect("unreachable") = state;
+					match internal_event {
+						Event_::Public(event) => break Ok(Some(event)),
+						Event_::RebootToVersion1_0 => todo!(),
+						Event_::DowngradeFrom1_1 => todo!(),
+					}
+				}
+				Continue(state) => *self.states.last_mut().expect("unreachable") = state,
+				Next::Error(error) => break Err(ScannerError::XmlError(error)),
+			}
+		}
+		.pipe(Ok)
+	}
+}
+
 /// [1]
 fn document<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	match (state, ret_val) {
