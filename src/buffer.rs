@@ -2,6 +2,7 @@ use core::{
 	cmp::min,
 	fmt::Debug,
 	mem::MaybeUninit,
+	slice,
 	str::{from_utf8, from_utf8_unchecked, from_utf8_unchecked_mut},
 };
 use miette::Diagnostic;
@@ -14,7 +15,11 @@ use tap::{Pipe, TryConv};
 use this_is_fine::Fine;
 use thiserror::Error;
 
+/// Input buffer for the XML parser.
+///
+/// Must be large enough for token lookahead (so about at least 10 bytes should be easily enough).
 pub struct StrBuf<'a> {
+	origin: *mut MaybeUninit<u8>,
 	memory: &'a mut [MaybeUninit<u8>],
 	initialized: usize,
 	filled: usize,
@@ -38,6 +43,7 @@ impl<'a> StrBuf<'a> {
 	#[must_use]
 	pub fn new(memory: &'a mut [MaybeUninit<u8>]) -> Self {
 		Self {
+			origin: memory.as_mut_ptr(),
 			memory,
 			initialized: 0,
 			filled: 0,
@@ -210,6 +216,7 @@ impl StrBuf<'_> {
 		} else {
 			memory[..self.filled].copy_from_slice(&self.memory[..self.filled]);
 			Ok(StrBuf {
+				origin: memory.as_mut_ptr(),
 				memory,
 				initialized: self.filled,
 				filled: self.filled,
@@ -217,69 +224,52 @@ impl StrBuf<'_> {
 			})
 		}
 	}
-}
 
-impl<'a> StrBuf<'a> {
-	/// (Re-)initialises an [`StrBuf`] over `memory` while retaining the data in `filled`.
+	/// Reset the buffer to span its originally covered memory region.
+	///
+	/// Remaining data is moved to the start of that memory.
 	///
 	/// # Safety
 	///
-	/// `filled` must be within `memory` and initialised.
+	/// This method invalidates the entire memory region this instance of [`StrBuf`] was initialised with.
 	///
-	/// # Panics
-	///
-	/// This function **may** panic in some cases where its safety constraints are not upheld.
-	pub unsafe fn reset(memory: &'a mut [MaybeUninit<u8>], filled: Range<*mut u8>) -> Self {
-		if cfg!(debug) {
-			'ok: loop {
-				'fail: for i in 0..memory.len() {
-					if memory[i].as_mut_ptr() == filled.start {
-						for i in &mut memory[i..] {
-							if i.as_mut_ptr() == filled.end {
-								break 'ok;
-							}
-						}
-						break 'fail;
-					}
-				}
-				panic!(
-					"`filled` pointer validity check fail. Expected `filled` in `memory` ({:p} <= {:p} <= {:p} <= {:p}).",
-					memory.as_mut_ptr_range().start, filled.start, filled.end, memory.as_mut_ptr_range().end,
-				);
-			}
-		}
-
-		let memory_start = addr_of_mut!(memory[0]).cast::<u8>();
-
-		// Note that we mustn't dereference through `filled`, as that would break non-aliasing guarantees!
-		let filled = (filled
-			.start
-			.offset_from(memory_start)
+	/// All borrows of buffer data (like those extracted through the `.shift_*` methods) must have been released.
+	pub unsafe fn reset(&mut self) {
+		let filled = (self
+			.memory
+			.as_mut_ptr()
+			.offset_from(self.origin)
 			.try_conv::<usize>()
-			.unwrap())
-			..(filled
-				.end
-				.offset_from(memory_start)
+			.expect("unreachable"))
+			..(addr_of_mut!(self.memory[self.filled])
+				.offset_from(self.origin)
 				.try_conv::<usize>()
-				.unwrap());
+				.expect("unreachable"));
+
+		let original_length = self
+			.memory
+			.as_mut_ptr_range()
+			.end
+			.offset_from(self.origin)
+			.try_conv::<usize>()
+			.expect("unreachable");
+
+		self.memory = &mut [];
+		self.memory = slice::from_raw_parts_mut(self.origin, original_length);
+
 		if filled.len() > filled.start {
 			// Slow path.
-			memory.copy_within(filled.clone(), 0);
+			self.memory.copy_within(filled.clone(), 0);
 		} else {
 			// Fast path.
 			copy_nonoverlapping(
-				addr_of_mut!(memory[filled.start]),
-				addr_of_mut!(memory[0]),
+				addr_of_mut!(self.memory[filled.start]),
+				addr_of_mut!(self.memory[0]),
 				filled.len(),
 			);
 		}
-		Self {
-			memory,
-			//TODO: This should be more.
-			initialized: filled.len(),
-			filled: filled.len(),
-			validated: 0,
-		}
+
+		self.initialized += filled.start;
 	}
 }
 
