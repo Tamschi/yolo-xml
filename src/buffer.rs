@@ -229,16 +229,24 @@ impl<'a> StrBuf<'a> {
 		}
 	}
 
-	/// Reset the buffer to span its originally covered memory region.
+	/// Resets the buffer to span its originally covered memory region.
 	///
 	/// Remaining data is moved to the start of that memory.
+	///
+	/// # Returns
+	///
+	/// The distance the buffer was shifted (in bytes).
+	///
+	/// > This can summed up to keep track of the cursor position in an XML document.
+	/// >
+	/// > This should, however, be done carefully to not implicitly restrict the length of accepted XML streams.
 	///
 	/// # Safety
 	///
 	/// This method invalidates the entire memory region this instance of [`StrBuf`] was initialised with.
 	///
 	/// All borrows of buffer data (like those extracted through the `.shift_*` methods) must have been released.
-	pub unsafe fn reset(&mut self) {
+	pub unsafe fn unshift_reset(&mut self) -> usize {
 		let filled = (self
 			.memory
 			.as_mut_ptr()
@@ -274,6 +282,8 @@ impl<'a> StrBuf<'a> {
 		}
 
 		self.initialized += filled.start;
+
+		filled.start
 	}
 }
 
