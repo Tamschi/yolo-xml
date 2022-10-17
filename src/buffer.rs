@@ -28,14 +28,13 @@ pub struct StrBuf<'a> {
 
 impl Debug for StrBuf<'_> {
 	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-		f.debug_struct("StrBuf")
-			.field("capacity", &self.memory.len())
-			.field("initialized", &self.initialized)
-			.field("filled", &self.filled)
-			.field("validated", &self.validated)
-			.field("validated()", &self.validated())
-			.field("unvalidated_filled()", &self.unvalidated_filled())
-			.finish()
+		write!(
+			f,
+			"StrBuf {{ {:?} {:?} {:?}}}",
+			self.validated(),
+			String::from_utf8_lossy(self.unvalidated_filled()),
+			self.remaining_len()
+		)
 	}
 }
 

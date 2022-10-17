@@ -1,5 +1,11 @@
-use std::mem::MaybeUninit;
-
+use std::{mem::MaybeUninit, sync::Once};
+use tracing::{
+	info, info_span, span,
+	subscriber::{self},
+	Level,
+};
+use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, Registry};
+use tracing_tree::HierarchicalLayer;
 use yolo_xml::{
 	buffer::StrBuf,
 	scanner::{Event, Scanner},
@@ -7,8 +13,10 @@ use yolo_xml::{
 
 #[test]
 fn xml_declaration() {
+	setup();
+
 	expect_events(
-		"<?xml version=\"1.1\">",
+		"<?xml version=\"1.1\"?>",
 		&[Event::Version(&mut b"1.1".to_owned())],
 	);
 }
@@ -22,10 +30,23 @@ fn expect_events(input: impl AsRef<[u8]>, events: &[Event]) {
 
 	let mut scanner = Scanner::new(10);
 	for expected in events {
+		let _span = info_span!("Expecting event", expected = ?expected).entered();
 		assert_eq!(
 			scanner.resume(&mut buffer).unwrap().unwrap().unwrap(),
 			*expected
 		);
 	}
-	scanner.resume(&mut buffer).unwrap_err();
+	{
+		let _span = info_span!("Expecting needs more data").entered();
+		scanner.resume(&mut buffer).unwrap_err();
+	}
+	assert_eq!(buffer.filled().len(), 0);
+}
+
+static SETUP_ONCE: Once = Once::new();
+fn setup() {
+	SETUP_ONCE.call_once(|| {
+		let subscriber = Registry::default().with(Box::new(HierarchicalLayer::new(2)));
+		subscriber::set_global_default(subscriber).unwrap();
+	});
 }
