@@ -224,6 +224,7 @@ impl<'a> StrBuf<'a> {
 				Ok(None)
 			}
 		} else {
+			//ON STREAM: `cargo +nightly miri test --test scanner`
 			if unsafe { *(addr_of!(self.memory[0]).cast::<[u8; LEN]>()) } == *data {
 				self.validated = self.validated.saturating_sub(LEN);
 				self.filled -= LEN;
