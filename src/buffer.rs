@@ -1,12 +1,13 @@
 use core::{
 	cmp::min,
-	fmt::Debug,
+	fmt::{self, Debug, Display, Formatter},
 	mem::MaybeUninit,
 	slice,
 	str::{from_utf8, from_utf8_unchecked, from_utf8_unchecked_mut},
 };
 use miette::Diagnostic;
 use std::{
+	cell::RefCell,
 	mem,
 	ops::Range,
 	ptr::{addr_of, addr_of_mut, copy_nonoverlapping},
@@ -27,12 +28,54 @@ pub struct StrBuf<'a> {
 }
 
 impl Debug for StrBuf<'_> {
-	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		struct Digest<'a>(&'a str, usize, &'a str);
+		impl Display for Digest<'_> {
+			fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+				struct Print<T>(RefCell<T>);
+				impl<T: Iterator<Item = char>> Display for Print<T> {
+					fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+						for c in &mut *self.0.borrow_mut() {
+							write!(f, "{}", c)?
+						}
+						Ok(())
+					}
+				}
+
+				if self.0.chars().take(self.1 + 1).count() <= self.1 {
+					write!(f, "{}", self.0)
+				} else {
+					let count = self.1 - self.2.chars().count();
+					let half = count / 2;
+					write!(
+						f,
+						"{}{}{}",
+						Print(self.0.chars().take(half + count % 2).into()),
+						self.2,
+						Print(
+							self.0
+								.chars()
+								.rev()
+								.take(half)
+								.collect::<Vec<_>>()
+								.into_iter()
+								.rev()
+								.into()
+						)
+					)
+				}
+			}
+		}
+
 		write!(
 			f,
-			"StrBuf {{ {:?} {:?} {:?}}}",
-			self.validated(),
-			String::from_utf8_lossy(self.unvalidated_filled()),
+			"{}̝{}+{:?}",
+			Digest(self.validated(), 20, "⸌⸍"),
+			Digest(
+				&String::from_utf8_lossy(self.unvalidated_filled()),
+				20,
+				"⸌⸍"
+			),
 			self.remaining_len()
 		)
 	}
