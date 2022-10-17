@@ -219,28 +219,26 @@ fn PI<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 			if let Some(end) = buffer.shift_known_array(b"?>")? {
 				Yield(5, Event::PIEnd(end).into())
 			} else {
-				Continue(41)
+				match buffer.validate() {
+					(valid, Err(error)) if valid.is_empty() => Error(Error::Utf8Error(error)),
+					(valid, Ok(())) if valid.is_empty() => return Err(MoreInputRequired::new()),
+					//BUG: Detect disallowed characters!
+					(_valid, _) => Yield(
+						4,
+						Event::PIChunk(
+							buffer
+								.shift_validated(if buffer.validated().ends_with('?') {
+									buffer.validated().len() - 1
+								} else {
+									buffer.validated().len()
+								})
+								.expect("unreachable"),
+						)
+						.into(),
+					),
+				}
 			}
 		}
-		(41, _) => match buffer.validate() {
-			(valid, Err(error)) if valid.is_empty() => Error(Error::Utf8Error(error)),
-			(valid, Ok(())) if valid.is_empty() => return Err(MoreInputRequired::new()),
-			//BUG: Detect disallowed characters!
-			(_valid, _) => Continue(42),
-		},
-		(42, _) => Yield(
-			4,
-			Event::PIChunk(
-				buffer
-					.shift_validated(if buffer.validated().ends_with("?") {
-						buffer.validated().len() - 1
-					} else {
-						buffer.validated().len()
-					})
-					.expect("unreachable"),
-			)
-			.into(),
-		),
 		(5, _) => Exit(Accept),
 		_ => unreachable!(),
 	}
