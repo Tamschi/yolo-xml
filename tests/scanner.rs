@@ -46,7 +46,8 @@ fn expect_events(input: impl AsRef<[u8]>, events: &[Event]) {
 static SETUP_ONCE: Once = Once::new();
 fn setup() {
 	SETUP_ONCE.call_once(|| {
-		let subscriber = Registry::default().with(Box::new(HierarchicalLayer::new(2)));
+		let subscriber =
+			Registry::default().with(Box::new(HierarchicalLayer::new(2).with_indent_lines(true)));
 		subscriber::set_global_default(subscriber).unwrap();
 	});
 }
