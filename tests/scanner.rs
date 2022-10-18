@@ -1,9 +1,5 @@
 use std::{mem::MaybeUninit, sync::Once};
-use tracing::{
-	info, info_span, span,
-	subscriber::{self},
-	Level,
-};
+use tracing::{info_span, subscriber};
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, Registry};
 use tracing_tree::HierarchicalLayer;
 use yolo_xml::{
