@@ -182,6 +182,26 @@ pub enum Event<'a> {
 	CDEnd(&'a mut [u8; 3]),
 	AttlistDeclStart(&'a mut [u8; 9]),
 	AttlistDeclEnd(&'a mut [u8; 1]),
+	StringType(StringType<'a>),
+	TokenizedType(TokenizedType<'a>),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum StringType<'a> {
+	CDATA(&'a mut [u8; 5]),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TokenizedType<'a> {
+	ID(&'a mut [u8; 2]),
+	IDREF(&'a mut [u8; 5]),
+	IDREFS(&'a mut [u8; 6]),
+	ENTITY(&'a mut [u8; 6]),
+	ENTITIES(&'a mut [u8; 8]),
+	NMTOKEN(&'a mut [u8; 7]),
+	NMTOKENS(&'a mut [u8; 8]),
 }
 
 #[derive(Debug)]

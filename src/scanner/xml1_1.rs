@@ -5,6 +5,7 @@ use super::{
 	Next::*,
 	NextFnR,
 	RetVal::{self, *},
+	StringType, TokenizedType,
 };
 use crate::buffer::StrBuf;
 use std::any::type_name;
@@ -583,6 +584,98 @@ fn AttlistDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextF
 /// [53]
 #[instrument(ret(Debug))]
 fn AttDef<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
+}
+
+/// [54]
+fn AttType<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => Call!(1, StringType),
+		(1, Reject) => Call!(2, TokenizedType),
+		(2, Reject) => Call!(3, EnumeratedType),
+		(1 | 2 | 3, Accept) => Exit(Accept),
+		(3, Reject) => Exit(Reject),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
+/// [55]
+fn StringType<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => match buffer.shift_known_array(b"CDATA")? {
+			Some(cdata) => Yield(1, Event::StringType(StringType::CDATA(cdata)).into()),
+			None => Exit(Reject),
+		},
+		(1, _) => Exit(Accept),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
+/// [56]
+fn TokenizedType<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => {
+			// Reordered so shorter strings come after those that contain them.
+			if let Some(id_refs) = buffer.shift_known_array(b"IDREFS")? {
+				Yield(
+					1,
+					Event::TokenizedType(TokenizedType::IDREFS(id_refs)).into(),
+				)
+			} else if let Some(id_ref) = buffer.shift_known_array(b"IDREF")? {
+				Yield(1, Event::TokenizedType(TokenizedType::IDREF(id_ref)).into())
+			} else if let Some(id) = buffer.shift_known_array(b"ID")? {
+				Yield(1, Event::TokenizedType(TokenizedType::ID(id)).into())
+			} else if let Some(entity) = buffer.shift_known_array(b"ENTITY")? {
+				Yield(
+					1,
+					Event::TokenizedType(TokenizedType::ENTITY(entity)).into(),
+				)
+			} else if let Some(entities) = buffer.shift_known_array(b"ENTITIES")? {
+				Yield(
+					1,
+					Event::TokenizedType(TokenizedType::ENTITIES(entities)).into(),
+				)
+			} else if let Some(nm_tokens) = buffer.shift_known_array(b"NMTOKENS")? {
+				Yield(
+					1,
+					Event::TokenizedType(TokenizedType::NMTOKENS(nm_tokens)).into(),
+				)
+			} else if let Some(nm_token) = buffer.shift_known_array(b"NMTOKEN")? {
+				Yield(
+					1,
+					Event::TokenizedType(TokenizedType::NMTOKEN(nm_token)).into(),
+				)
+			} else {
+				Exit(Reject)
+			}
+		}
+		(1, _) => Exit(Accept),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
+/// [57]
+fn EnumeratedType<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	match (state, ret_val) {
+		(0, _) => Call!(1, NotationType),
+		(1, Reject) => Call!(2, Enumeration),
+		(1 | 2, Accept) => Exit(Accept),
+		(2, Reject) => Exit(Reject),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
+}
+
+/// [58]
+fn NotationType<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
+}
+
+/// [59]
+fn Enumeration<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 	todo!()
 }
 
