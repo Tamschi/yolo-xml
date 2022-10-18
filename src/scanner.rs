@@ -86,6 +86,7 @@ impl Scanner {
 		}
 	}
 
+	//ON STREAM: Return an error if the buffer is clogged!
 	#[instrument(ret(Debug))]
 	pub fn resume<'a>(
 		&mut self,
