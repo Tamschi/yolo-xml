@@ -7,7 +7,8 @@
 #![allow(
 	clippy::semicolon_if_nothing_returned,
 	clippy::if_not_else,
-	clippy::single_match_else
+	clippy::single_match_else,
+	clippy::match_bool
 )]
 #![allow(missing_docs)]
 
