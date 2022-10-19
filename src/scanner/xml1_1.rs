@@ -81,6 +81,18 @@ fn AttValue<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<
 	todo!()
 }
 
+/// [11]
+#[instrument(ret(Debug))]
+fn SystemLiteral<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
+}
+
+/// [12]
+#[instrument(ret(Debug))]
+fn PubidLiteral<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+	todo!()
+}
+
 /// [15]
 /// Start tokens: `<!--`
 #[instrument(ret(Debug))]
@@ -786,8 +798,49 @@ fn EncodingDecl_minus_initial_S<'a>(
 	.pipe(Ok)
 }
 
-/// [82]
-#[instrument(ret(Debug))]
+/// [82] [75] [83]
+///
+/// > This is an annoying ambiguous parse when not flattened.
 fn NotationDecl<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
-	todo!()
+	match (state, ret_val) {
+		(0, _) => match buffer.shift_known_array(b"<!NOTATION")? {
+			Some(notation) => Yield(1, Event::NotationDeclStart(notation).into()),
+			None => Exit(Reject),
+		},
+		(1, _) => Call!(2, S),
+		(2, Accept) => Call!(3, Name),
+		(2, Reject) => Error(Error::Expected3Whitespace),
+		(3, Accept) => Call!(4, S),
+		(3, Reject) => Error(Error::Expected5Name),
+		(4, Accept) => {
+			if let Some(system) = buffer.shift_known_array(b"SYSTEM")? {
+				Yield(5, Event::SYSTEM(system).into())
+			} else if let Some(public) = buffer.shift_known_array(b"PUBLIC")? {
+				Yield(todo!(), Event::PUBLIC(public).into())
+			} else {
+				Error(Error::ExpectedSYSTEMorPUBLIC)
+			}
+		}
+		(4, Reject) => Error(Error::Expected3Whitespace),
+		(5, _) => Call!(6, S),
+		(6, Accept) => Call!(61, SystemLiteral),
+		(6, Reject) => Error(Error::Expected3Whitespace),
+		(61, Accept) => Call!(12, S),
+		(61, Reject) => Error(Error::Expected11SystemLiteral),
+		(7, _) => Call!(8, S),
+		(8, Accept) => Call!(9, PubidLiteral),
+		(8, Reject) => Error(Error::Expected3Whitespace),
+		(9, Accept) => Call!(10, S),
+		(9, Reject) => Error(Error::Expected12PubidLiteral),
+		(10, Accept) => Call!(11, SystemLiteral),
+		(11, Reject) => Continue(12),
+		(11, Accept) => Call!(12, S),
+		(12, _) => match buffer.shift_known_array(b">")? {
+			Some(end) => Yield(13, Event::NotationDeclEnd(end).into()),
+			None => Error(Error::ExpectedNotationDeclEnd),
+		},
+		(13, _) => Exit(Accept),
+		_ => unreachable!(),
+	}
+	.pipe(Ok)
 }

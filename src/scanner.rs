@@ -184,6 +184,10 @@ pub enum Event<'a> {
 	AttlistDeclEnd(&'a mut [u8; 1]),
 	StringType(StringType<'a>),
 	TokenizedType(TokenizedType<'a>),
+	NotationDeclStart(&'a mut [u8; 10]),
+	SYSTEM(&'a mut [u8; 6]),
+	PUBLIC(&'a mut [u8; 6]),
+	NotationDeclEnd(&'a mut [u8; 1]),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -225,4 +229,8 @@ pub enum Error {
 	Expected28bIntSubset,
 	ExpectedAttlistDeclEnd,
 	ExpectedXMLDeclEnd,
+	ExpectedSYSTEMorPUBLIC,
+	Expected12PubidLiteral,
+	Expected11SystemLiteral,
+	ExpectedNotationDeclEnd,
 }
