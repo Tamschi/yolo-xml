@@ -55,15 +55,14 @@ fn S<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 			true => Continue(1),
 			false => Exit(Reject),
 		},
-		//ON STREAM: Turn into loop.
-		(1, _) => match buffer.shift_known_array(&[0x20])?.is_some()
-			|| buffer.shift_known_array(&[0x9])?.is_some()
-			|| buffer.shift_known_array(&[0xD])?.is_some()
-			|| buffer.shift_known_array(&[0xA])?.is_some()
-		{
-			true => Continue(1),
-			false => Exit(Accept),
-		},
+		(1, _) => {
+			while buffer.shift_known_array(&[0x20])?.is_some()
+				|| buffer.shift_known_array(&[0x9])?.is_some()
+				|| buffer.shift_known_array(&[0xD])?.is_some()
+				|| buffer.shift_known_array(&[0xA])?.is_some()
+			{}
+			Exit(Accept)
+		}
 		_ => unreachable!(),
 	}
 	.pipe(Ok)
