@@ -243,6 +243,7 @@ impl<'a> StrBuf<'a> {
 		}
 	}
 
+	/// Returns the number of bytes that can still be inserted into this buffer in the current memory allocation (without resetting it).
 	#[must_use]
 	pub fn remaining_len(&self) -> usize {
 		self.memory.len() - self.filled
@@ -326,6 +327,11 @@ impl<'a> StrBuf<'a> {
 		self.initialized += filled.start;
 
 		filled.start
+	}
+
+	/// Checks whether the buffer has shifted from its original start position.
+	pub fn is_at_origin(&self) -> bool {
+		self.origin as *const _ == addr_of!(self.memory[0])
 	}
 }
 

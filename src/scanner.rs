@@ -61,6 +61,7 @@ impl Debug for Scanner {
 pub enum ScannerError {
 	DepthLimitExceeded,
 	XmlError(Error),
+	BufferClogged,
 }
 
 #[derive(Debug)]
@@ -95,14 +96,23 @@ impl Scanner {
 	) -> Result<Result<Option<Event<'a>>, ScannerError>, MoreInputRequired> {
 		let mut last_ret_val = RetVal::Accept;
 		loop {
-			let next = self
+			let next = match self
 				.call_stack
 				.last()
 				.expect("Called resume while the call stack was empty.")(
 				buffer,
 				*self.states.last().expect("unreachable"),
 				last_ret_val,
-			)?;
+			) {
+				Ok(ok) => ok,
+				Err(more_input_required) => {
+					return if buffer.is_at_origin() && buffer.remaining_len() == 0 {
+						Ok(Err(ScannerError::BufferClogged))
+					} else {
+						Err(more_input_required)
+					}
+				}
+			};
 			// Not strictly necessary, but in case there's a bug this makes it reliably work/not work.
 			last_ret_val = RetVal::Accept;
 			match next {
