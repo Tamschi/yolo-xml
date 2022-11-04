@@ -1,16 +1,13 @@
 #![allow(clippy::enum_glob_use, non_snake_case, clippy::match_same_arms)]
 
 use super::{
-	xml1_0, Error, Event, Event_, MoreInputRequired,
+	xml1_0::Grammar,
+	Error, Event, Event_,
 	Next::*,
 	NextFnR,
 	RetVal::{self, *},
-	StringType, TokenizedType,
 };
-use crate::{
-	buffer::StrBuf,
-	scanner::xml1_0::{Grammar, Xml1_0},
-};
+use crate::buffer::StrBuf;
 use std::any::type_name;
 use tap::Pipe;
 use tracing::instrument;

@@ -40,18 +40,18 @@ impl Debug for Next<'_> {
 			Self::Continue(state) => f.debug_tuple("Continue").field(state).finish(),
 			Self::Error(error) => f.debug_tuple("Error").field(error).finish(),
 			#[cfg(not(debug_assertions))]
-			Self::CallState(state, callee, calleeState) => f
+			Self::CallState(state, callee, callee_state) => f
 				.debug_tuple("Call")
 				.field(state)
 				.field(&(*callee as usize))
-				.field(calleeState)
+				.field(callee_state)
 				.finish(),
 			#[cfg(debug_assertions)]
-			Self::CallState(state, _callee, name, calleeState) => f
+			Self::CallState(state, _callee, name, callee_state) => f
 				.debug_tuple("Call")
 				.field(state)
 				.field(name)
-				.field(calleeState)
+				.field(callee_state)
 				.finish(),
 		}
 	}
@@ -101,6 +101,7 @@ impl From<Indeterminate> for MoreInputRequired {
 }
 
 impl Scanner {
+	#[must_use]
 	pub fn new(depth_limit: usize) -> Self {
 		Self {
 			depth_limit,
@@ -161,21 +162,21 @@ impl Scanner {
 					self.call_stack.push(callee);
 				}
 				#[cfg(not(debug_assertions))]
-				CallState(state, callee, calleeState) => {
+				CallState(state, callee, callee_state) => {
 					if self.states.len() >= self.depth_limit {
 						break Err(ScannerError::DepthLimitExceeded);
 					}
 					*self.states.last_mut().expect("unreachable") = state;
-					self.states.push(calleeState);
+					self.states.push(callee_state);
 					self.call_stack.push(callee);
 				}
 				#[cfg(debug_assertions)]
-				CallState(state, callee, _name, calleeState) => {
+				CallState(state, callee, _name, callee_state) => {
 					if self.states.len() >= self.depth_limit {
 						break Err(ScannerError::DepthLimitExceeded);
 					}
 					*self.states.last_mut().expect("unreachable") = state;
-					self.states.push(calleeState);
+					self.states.push(callee_state);
 					self.call_stack.push(callee);
 				}
 				Yield(state, internal_event) => {

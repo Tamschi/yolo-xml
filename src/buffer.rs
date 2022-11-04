@@ -383,6 +383,7 @@ impl<'a> StrBuf<'a> {
 	}
 
 	/// Checks whether the buffer has shifted from its original start position.
+	#[must_use]
 	pub fn is_at_origin(&self) -> bool {
 		self.origin as *const _ == self.memory.as_ptr_range().start
 	}

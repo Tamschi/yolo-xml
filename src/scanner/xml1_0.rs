@@ -1,12 +1,9 @@
 #![allow(clippy::enum_glob_use, non_snake_case, clippy::match_same_arms)]
 
-use super::Next::*;
-use super::NextFnR;
-use super::RetVal;
-use super::RetVal::*;
-use super::StringType;
-use super::TokenizedType;
-use super::{Error, Event, Event_, MoreInputRequired};
+use super::{
+	Error, Event, Event_, MoreInputRequired, Next::*, NextFnR, RetVal, RetVal::*, StringType,
+	TokenizedType,
+};
 use crate::buffer::StrBuf;
 use std::any::type_name;
 use tap::Pipe;
