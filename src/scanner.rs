@@ -1,4 +1,7 @@
-use crate::buffer::{Indeterminate, StrBuf, Utf8Error};
+use crate::{
+	buffer::{Indeterminate, StrBuf, Utf8Error},
+	scanner::xml1_0::{Grammar, Xml1_0},
+};
 use std::fmt::Debug;
 use tap::Pipe;
 use tracing::{instrument, trace};
@@ -19,6 +22,8 @@ enum Next<'a> {
 }
 #[allow(clippy::enum_glob_use)]
 use Next::*;
+
+use self::xml1_1::Xml1_1;
 impl Debug for Next<'_> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
@@ -100,7 +105,7 @@ impl Scanner {
 		Self {
 			depth_limit,
 			states: vec![0],
-			call_stack: vec![xml1_1::document],
+			call_stack: vec![Xml1_1::document],
 		}
 	}
 
@@ -183,7 +188,7 @@ impl Scanner {
 							self.call_stack.clear();
 
 							self.states.push(0);
-							self.call_stack.push(xml1_0::document);
+							self.call_stack.push(Xml1_0::document);
 						}
 						Event_::DowngradeFrom1_1SingleQuoted => {
 							trace!("Downgrading into XML 1.0 (single-quoted version).");
@@ -191,7 +196,7 @@ impl Scanner {
 							// States are analogous.
 							self.states
 								.push(xml1_0::START_AT_VERSION_NUMBER_SINGLE_QUOTE);
-							self.call_stack.push(xml1_0::document);
+							self.call_stack.push(Xml1_0::document);
 						}
 						Event_::DowngradeFrom1_1DoubleQuoted => {
 							trace!("Downgrading into XML 1.0 (double-quoted version).");
@@ -199,7 +204,7 @@ impl Scanner {
 							// States are analogous.
 							self.states
 								.push(xml1_0::START_AT_VERSION_NUMBER_DOUBLE_QUOTE);
-							self.call_stack.push(xml1_0::document);
+							self.call_stack.push(Xml1_0::document);
 						}
 					}
 				}
