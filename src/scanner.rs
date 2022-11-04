@@ -1,8 +1,9 @@
 use crate::buffer::{Indeterminate, StrBuf, Utf8Error};
 use std::fmt::Debug;
 use tap::Pipe;
-use tracing::instrument;
+use tracing::{instrument, trace};
 
+mod xml1_0;
 mod xml1_1;
 
 type NextFn = for<'a> fn(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a>;
@@ -14,6 +15,7 @@ enum Next<'a> {
 	Yield(u8, Event_<'a>),
 	Continue(u8),
 	Error(Error),
+	CallState(u8, NextFn, #[cfg(debug_assertions)] &'static str, u8),
 }
 #[allow(clippy::enum_glob_use)]
 use Next::*;
@@ -32,6 +34,20 @@ impl Debug for Next<'_> {
 			Self::Yield(state, event) => f.debug_tuple("Yield").field(state).field(event).finish(),
 			Self::Continue(state) => f.debug_tuple("Continue").field(state).finish(),
 			Self::Error(error) => f.debug_tuple("Error").field(error).finish(),
+			#[cfg(not(debug_assertions))]
+			Self::CallState(state, callee, calleeState) => f
+				.debug_tuple("Call")
+				.field(state)
+				.field(&(*callee as usize))
+				.field(calleeState)
+				.finish(),
+			#[cfg(debug_assertions)]
+			Self::CallState(state, _callee, name, calleeState) => f
+				.debug_tuple("Call")
+				.field(state)
+				.field(name)
+				.field(calleeState)
+				.finish(),
 		}
 	}
 }
@@ -139,12 +155,52 @@ impl Scanner {
 					self.states.push(0);
 					self.call_stack.push(callee);
 				}
+				#[cfg(not(debug_assertions))]
+				CallState(state, callee, calleeState) => {
+					if self.states.len() >= self.depth_limit {
+						break Err(ScannerError::DepthLimitExceeded);
+					}
+					*self.states.last_mut().expect("unreachable") = state;
+					self.states.push(calleeState);
+					self.call_stack.push(callee);
+				}
+				#[cfg(debug_assertions)]
+				CallState(state, callee, _name, calleeState) => {
+					if self.states.len() >= self.depth_limit {
+						break Err(ScannerError::DepthLimitExceeded);
+					}
+					*self.states.last_mut().expect("unreachable") = state;
+					self.states.push(calleeState);
+					self.call_stack.push(callee);
+				}
 				Yield(state, internal_event) => {
 					*self.states.last_mut().expect("unreachable") = state;
 					match internal_event {
 						Event_::Public(event) => return Ok(Ok(Some(event))),
-						Event_::RebootToVersion1_0 => todo!(),
-						Event_::DowngradeFrom1_1 => todo!(),
+						Event_::RebootToVersion1_0 => {
+							trace!("Rebooting to XML 1.0.");
+							self.states.clear();
+							self.call_stack.clear();
+
+							self.states.push(0);
+							self.call_stack.push(xml1_0::document);
+						}
+						Event_::DowngradeFrom1_1SingleQuoted => {
+							trace!("Downgrading into XML 1.0 (single-quoted version).");
+
+							// States are analogous.
+							self.states
+								.push(xml1_0::START_AT_VERSION_NUMBER_SINGLE_QUOTE);
+							self.call_stack.push(xml1_0::document);
+						}
+						Event_::DowngradeFrom1_1DoubleQuoted => {
+							trace!("Downgrading into XML 1.0 (double-quoted version).");
+
+							// States are analogous.
+							self.states
+								.push(xml1_0::START_AT_VERSION_NUMBER_DOUBLE_QUOTE);
+							self.call_stack.push(xml1_0::document);
+						}
 					}
 				}
 				Continue(state) => *self.states.last_mut().expect("unreachable") = state,
@@ -159,7 +215,8 @@ impl Scanner {
 enum Event_<'a> {
 	Public(Event<'a>),
 	RebootToVersion1_0,
-	DowngradeFrom1_1,
+	DowngradeFrom1_1SingleQuoted,
+	DowngradeFrom1_1DoubleQuoted,
 }
 impl<'a> From<Event<'a>> for Event_<'a> {
 	fn from(event: Event<'a>) -> Self {
@@ -170,7 +227,7 @@ impl<'a> From<Event<'a>> for Event_<'a> {
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Event<'a> {
-	Version(&'a mut [u8]),
+	VersionChunk(&'a mut [u8]),
 	CommentStart(&'a mut [u8; 4]),
 	CommentEnd(&'a mut [u8; 3]),
 	CommentChunk(&'a mut str),
@@ -243,4 +300,6 @@ pub enum Error {
 	Expected12PubidLiteral,
 	Expected11SystemLiteral,
 	ExpectedNotationDeclEnd,
+	UnsupportedXmlVersion,
+	ExpectedDecimalDigit,
 }

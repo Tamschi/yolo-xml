@@ -243,6 +243,59 @@ impl<'a> StrBuf<'a> {
 		}
 	}
 
+	/// Skips past a section at the beginning of the buffer if `predicate` returns true for it.
+	///
+	/// # Errors
+	///
+	/// Iff this buffer does not contain enough data to supply `predicate`'s input.
+	pub fn shift_array_test_full<const LEN: usize>(
+		&mut self,
+		predicate: impl FnOnce(&[u8; LEN]) -> bool,
+	) -> Result<Option<&'a mut [u8; LEN]>, Indeterminate> {
+		if self.filled < LEN {
+			Err(Indeterminate::new())
+		} else {
+			if predicate(unsafe { &*(addr_of!(self.memory[0..LEN]).cast::<[u8; LEN]>()) }) {
+				self.validated = self.validated.saturating_sub(LEN);
+				self.filled -= LEN;
+				self.initialized -= LEN;
+				let (skipped, memory) = self.memory.split_at_mut(LEN);
+				self.memory = unsafe { &mut *(memory as *mut _) };
+				Some(unsafe {
+					&mut *(skipped
+						.try_conv::<&mut [MaybeUninit<u8>; LEN]>()
+						.expect("unreachable") as *mut [MaybeUninit<u8>; LEN])
+						.cast::<[u8; LEN]>()
+				})
+			} else {
+				None
+			}
+			.pipe(Ok)
+		}
+	}
+
+	/// Skips past contiguous bytes at the beginning of the buffer that fulfill `predicate`.
+	///
+	/// # Errors
+	///
+	/// Iff this buffer does not contain at least one byte, then [`Err<Indeterminate>`] is returned instead.
+	pub fn shift_bytes_while(
+		&mut self,
+		mut predicate: impl FnMut(u8) -> bool,
+	) -> Result<&'a mut [u8], Indeterminate> {
+		if self.filled < 1 {
+			Err(Indeterminate::new())
+		} else {
+			let mut count = 0;
+			while count < self.filled
+				&& predicate(unsafe { *(addr_of!(self.memory[count]).cast()) })
+			{
+				count += 1;
+			}
+			Ok(self.shift_filled(count).expect("unreachable"))
+		}
+	}
+
 	/// Returns the number of bytes that can still be inserted into this buffer in the current memory allocation (without resetting it).
 	#[must_use]
 	pub fn remaining_len(&self) -> usize {

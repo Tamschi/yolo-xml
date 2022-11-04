@@ -13,7 +13,53 @@ fn xml_declaration() {
 
 	expect_events(
 		"<?xml version=\"1.1\"?>",
-		&[Event::Version(&mut b"1.1".to_owned())],
+		&[Event::VersionChunk(&mut b"1.1".to_owned())],
+	);
+}
+
+#[test]
+fn downgrade_1() {
+	setup();
+
+	expect_events(" ", &[]);
+}
+
+#[test]
+fn downgrade_2() {
+	setup();
+
+	expect_events(
+		"<?xml version=\"1.0\"?>",
+		&[
+			Event::VersionChunk(&mut b"1.".to_owned()),
+			Event::VersionChunk(&mut b"0".to_owned()),
+		],
+	);
+}
+
+#[test]
+fn downgrade_3() {
+	setup();
+
+	expect_events(
+		"<?xml version=\"1.12345\"?>",
+		&[
+			Event::VersionChunk(&mut b"1.".to_owned()),
+			Event::VersionChunk(&mut b"12345".to_owned()),
+		],
+	);
+}
+
+#[test]
+fn downgrade_4() {
+	setup();
+
+	expect_events(
+		"<?xml version=\"1.77777\"?>",
+		&[
+			Event::VersionChunk(&mut b"1.".to_owned()),
+			Event::VersionChunk(&mut b"77777".to_owned()),
+		],
 	);
 }
 
