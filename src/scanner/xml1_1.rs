@@ -7,7 +7,7 @@ use super::{
 	NextFnR,
 	RetVal::{self, *},
 };
-use crate::buffer::StrBuf;
+use crate::{buffer::StrBuf, scanner::MoreInputRequired};
 use std::any::type_name;
 use tap::Pipe;
 use tracing::instrument;
@@ -105,9 +105,19 @@ impl Grammar for Xml1_1 {
 	fn VersionNum<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 		match (state, ret_val) {
 			//BUG: Ensure this is terminated!
-			(0, _) => match buffer.shift_known_array(b"1.1")? {
-				Some(version) => Yield(1, Event::VersionChunk(version).into()),
-				None => Exit(Reject),
+			(0, _) => match buffer.filled() {
+				[b'1', b'.', b'1', x, ..] if !(b'0'..=b'9').contains(x) => Yield(
+					1,
+					Event::VersionChunk(
+						buffer
+							.shift_known_array(b"1.1")
+							.expect("unreachable")
+							.expect("unreachable"),
+					)
+					.into(),
+				),
+				b"1.1" | b"1." | b"1" => return Err(MoreInputRequired::new()),
+				_ => Exit(Reject),
 			},
 			(1, _) => Exit(Accept),
 			_ => unreachable!(),

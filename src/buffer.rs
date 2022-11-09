@@ -406,6 +406,7 @@ impl OutOfBoundsError {
 	}
 }
 
+#[derive(Debug)]
 pub struct Indeterminate {
 	_private: (),
 }
