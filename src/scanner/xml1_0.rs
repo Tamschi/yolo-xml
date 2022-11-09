@@ -199,10 +199,63 @@ pub(super) trait Grammar {
 		.pipe(Ok)
 	}
 
+	/// [4]
+	#[instrument(ret(Debug))]
+	fn test_NameStartChar(c: char) -> bool {
+		matches!(c,
+			| ':'
+			| 'A'..='Z'
+			| '_'
+			| 'a'..='z'
+			| '\u{C0}'..='\u{D6}'
+			| '\u{D8}'..='\u{F6}'
+			| '\u{F8}'..='\u{2FF}'
+			| '\u{370}'..='\u{37D}'
+			| '\u{37F}'..='\u{1FFF}'
+			| '\u{200C}'..='\u{200D}'
+			| '\u{2070}'..='\u{218F}'
+			| '\u{2C00}'..='\u{2FEF}'
+			| '\u{3001}'..='\u{D7FF}'
+			| '\u{F900}'..='\u{FDCF}'
+			| '\u{FDF0}'..='\u{FFFD}'
+			| '\u{10000}'..='\u{EFFFF}')
+	}
+
+	/// [4a]
+	#[instrument(ret(Debug))]
+	fn test_NameChar(c: char) -> bool {
+		Self::test_NameStartChar(c)
+			|| matches!(c,
+				| '-'
+				| '.'
+				| '0'..='9'
+				| '\u{B7}'
+				| '\u{300}'..='\u{36F}'
+				| '\u{203F}'..='\u{2040}')
+	}
+
 	/// [5]
 	#[instrument(ret(Debug))]
 	fn Name<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
-		todo!()
+		match (state, ret_val) {
+			(0, _) => {
+				match buffer
+					.shift_chars_start_while(Self::test_NameStartChar, Self::test_NameChar)?
+				{
+					Ok(x) if x.is_empty() => Exit(Reject),
+					Ok(chunk) => Yield(1, Event::NameChunk(chunk).into()),
+					Err(error) => Error(Error::Utf8Error(error)),
+				}
+			}
+			(1, _) => match buffer.shift_chars_while(Self::test_NameChar)? {
+				Ok(x) if x.is_empty() => Exit(Accept),
+				Ok(chunk) => Yield(1, Event::NameChunk(chunk).into()),
+				Err(error) => Error(Error::Utf8Error(error)),
+			},
+
+			_ => unreachable!(),
+		}
+		.pipe(Ok)
 	}
 
 	/// [10]

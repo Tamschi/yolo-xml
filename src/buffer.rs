@@ -8,6 +8,7 @@ use core::{
 use miette::Diagnostic;
 use std::{
 	cell::RefCell,
+	io::ErrorKind,
 	mem,
 	ops::Range,
 	ptr::{addr_of, addr_of_mut, copy_nonoverlapping},
@@ -15,6 +16,7 @@ use std::{
 use tap::{Pipe, TryConv};
 use this_is_fine::Fine;
 use thiserror::Error;
+use utf8_chars::BufReadCharsExt;
 
 /// Input buffer for the XML parser.
 ///
@@ -294,6 +296,116 @@ impl<'a> StrBuf<'a> {
 			}
 			Ok(self.shift_filled(count).expect("unreachable"))
 		}
+	}
+
+	/// Skips past contiguous bytes at the beginning of the buffer that fulfill `predicate`.
+	///
+	/// # Errors
+	///
+	/// Iff this buffer does not contain at least one byte, then [`Err<Indeterminate>`] is returned instead.
+	pub fn shift_chars_while(
+		&mut self,
+		mut predicate: impl FnMut(char) -> bool,
+	) -> Result<Result<&'a mut str, Utf8Error>, Indeterminate> {
+		let mut rest = self.filled();
+		let mut chars = BufReadCharsExt::chars_raw(&mut rest);
+		let mut len = 0;
+		loop {
+			match chars.next() {
+				Some(Err(error)) => match error.as_io_error().kind() {
+					ErrorKind::InvalidData => match len {
+						0 => {
+							return Ok(Err(Utf8Error {
+								len: error.as_bytes().len(),
+							}));
+						}
+						_ => break,
+					},
+					ErrorKind::UnexpectedEof => match len {
+						0 => return Err(Indeterminate::new()),
+						_ => break,
+					},
+					_ => unreachable!(),
+				},
+				None => match len {
+					0 => return Err(Indeterminate::new()),
+					_ => break,
+				},
+				Some(Ok(c)) => match predicate(c) {
+					true => len += c.len_utf8(),
+					false => break,
+				},
+			};
+		}
+
+		Ok(Ok(unsafe {
+			//SAFETY: UTF-8 validation happens above.
+			from_utf8_unchecked_mut(self.shift_filled(len).expect("unreachable"))
+		}))
+	}
+
+	/// Skips past contiguous bytes at the beginning of the buffer that fulfill `predicate`.
+	///
+	/// # Errors
+	///
+	/// Iff this buffer does not contain at least one byte, then [`Err<Indeterminate>`] is returned instead.
+	pub fn shift_chars_start_while(
+		&mut self,
+		start_predicate: impl FnOnce(char) -> bool,
+		mut predicate: impl FnMut(char) -> bool,
+	) -> Result<Result<&'a mut str, Utf8Error>, Indeterminate> {
+		let mut rest = self.filled();
+		let mut chars = BufReadCharsExt::chars_raw(&mut rest);
+		let mut len = match chars.next() {
+			Some(Err(error)) => match error.as_io_error().kind() {
+				ErrorKind::InvalidData => {
+					return Ok(Err(Utf8Error {
+						len: error.as_bytes().len(),
+					}))
+				}
+				ErrorKind::UnexpectedEof => return Err(Indeterminate::new()),
+				_ => unreachable!(),
+			},
+			None => return Err(Indeterminate::new()),
+			Some(Ok(c)) => match start_predicate(c) {
+				true => c.len_utf8(),
+				false => {
+					return Ok(Ok(unsafe {
+						//SAFETY: The empty slice is always valid UTF-8.
+						from_utf8_unchecked_mut(self.shift_filled(0).expect("unreachable"))
+					}));
+				}
+			},
+		};
+		loop {
+			match chars.next() {
+				Some(Err(error)) => match error.as_io_error().kind() {
+					ErrorKind::InvalidData => match len {
+						0 => {
+							return Ok(Err(Utf8Error {
+								len: error.as_bytes().len(),
+							}));
+						}
+						_ => break,
+					},
+					ErrorKind::UnexpectedEof => match len {
+						0 => return Err(Indeterminate::new()),
+						_ => break,
+					},
+					_ => unreachable!(),
+				},
+				None => break,
+				Some(Ok(c)) => match predicate(c) {
+					true => len += c.len_utf8(),
+					false => break,
+				},
+			};
+		}
+
+		Ok(Ok(unsafe {
+			//SAFETY: UTF-8 validation happens above.
+			from_utf8_unchecked_mut(self.shift_filled(len).expect("unreachable"))
+		}))
 	}
 
 	/// Returns the number of bytes that can still be inserted into this buffer in the current memory allocation (without resetting it).

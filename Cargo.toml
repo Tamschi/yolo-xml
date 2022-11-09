@@ -39,6 +39,7 @@ tap = "1.0.1"
 this-is-fine = "0.0.1"
 thiserror = "1.0.37"
 tracing = { version = "0.1.26", default-features = false, features = ["attributes"] }
+utf8-chars = "2.0.2"
 
 [dev-dependencies]
 cargo-husky = "1.5.0"

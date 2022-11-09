@@ -261,6 +261,7 @@ pub enum Event<'a> {
 	SYSTEM(&'a mut [u8; 6]),
 	PUBLIC(&'a mut [u8; 6]),
 	NotationDeclEnd(&'a mut [u8; 1]),
+	NameChunk(&'a mut str),
 }
 
 #[derive(Debug, PartialEq, Eq)]

@@ -63,6 +63,20 @@ fn downgrade_4() {
 	);
 }
 
+#[test]
+fn empty() {
+	setup();
+
+	expect_events(
+		"<empty />",
+		&[
+			Event::StartTagStart(&mut b"<".to_owned()),
+			Event::NameChunk(&mut "empty".to_owned()),
+			Event::StartTagEndEmpty(&mut b"/>".to_owned()),
+		],
+	);
+}
+
 fn expect_events(input: impl AsRef<[u8]>, events: &[Event]) {
 	let mut buffer = Vec::from_iter(input.as_ref().iter().copied().map(MaybeUninit::new));
 	let mut buffer = StrBuf::new(buffer.as_mut_slice());
