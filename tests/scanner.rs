@@ -68,7 +68,7 @@ fn downgrade_4() {
 }
 
 #[test]
-fn empty() {
+fn empty_element() {
 	setup();
 
 	expect_events(
@@ -79,6 +79,78 @@ fn empty() {
 			Event::StartTagEndEmpty(&mut b"/>".to_owned()),
 		],
 		None,
+	);
+}
+
+#[test]
+fn element_content() {
+	setup();
+
+	expect_events(
+		"<element > content </element>",
+		&[
+			Event::StartTagStart(&mut b"<".to_owned()),
+			Event::NameChunk(&mut "element".to_owned()),
+			Event::StartTagEnd(&mut b">".to_owned()),
+			Event::CharDataChunk(&mut " content ".to_owned()),
+			Event::EndTagStart(&mut b"</".to_owned()),
+			Event::NameChunk(&mut "element".to_owned()),
+			Event::EndTagEnd(&mut b">".to_owned()),
+		],
+		None,
+	);
+}
+
+#[test]
+fn element_content_1_0_fail() {
+	setup();
+
+	expect_events(
+		"<element > content \u{1} </element>",
+		&[
+			Event::StartTagStart(&mut b"<".to_owned()),
+			Event::NameChunk(&mut "element".to_owned()),
+			Event::StartTagEnd(&mut b">".to_owned()),
+			Event::CharDataChunk(&mut " content ".to_owned()),
+		],
+		Some(ScannerError::XmlError(Error::Expected42ETag)),
+	);
+}
+
+#[test]
+fn element_content_1_1() {
+	setup();
+
+	expect_events(
+		"<?xml version='1.1'?><element> content \u{1} </element>",
+		&[
+			Event::VersionChunk(&mut b"1.1".to_owned()),
+			Event::StartTagStart(&mut b"<".to_owned()),
+			Event::NameChunk(&mut "element".to_owned()),
+			Event::StartTagEnd(&mut b">".to_owned()),
+			Event::CharDataChunk(&mut " content \u{1} ".to_owned()),
+			Event::EndTagStart(&mut b"</".to_owned()),
+			Event::NameChunk(&mut "element".to_owned()),
+			Event::EndTagEnd(&mut b">".to_owned()),
+		],
+		None,
+	);
+}
+
+#[test]
+fn element_content_1_1_fail() {
+	setup();
+
+	expect_events(
+		"<?xml version='1.1'?><element> content \u{0} </element>",
+		&[
+			Event::VersionChunk(&mut b"1.1".to_owned()),
+			Event::StartTagStart(&mut b"<".to_owned()),
+			Event::NameChunk(&mut "element".to_owned()),
+			Event::StartTagEnd(&mut b">".to_owned()),
+			Event::CharDataChunk(&mut " content ".to_owned()),
+		],
+		Some(ScannerError::XmlError(Error::Expected42ETag)),
 	);
 }
 

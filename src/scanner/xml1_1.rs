@@ -32,7 +32,14 @@ pub(super) enum Xml1_1 {}
 impl Grammar for Xml1_1 {
 	// [1] `document` unmodified.
 
-	//TODO: [2] `Char` modified!
+	/// [2]
+	fn test_Char(c: char) -> bool {
+		matches!(
+			c,
+			|'\u{1}'..='\u{D7FF}'| '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'
+		)
+	}
+
 	//TODO: [2a] `RestrictedChar` added!
 
 	// [3] `S` unmodified.

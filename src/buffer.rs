@@ -347,6 +347,7 @@ impl<'a> StrBuf<'a> {
 			};
 		}
 
+		//TODO: Transform line endings!
 		Ok(Ok(unsafe {
 			//SAFETY: UTF-8 validation happens above.
 			from_utf8_unchecked_mut(self.shift_filled(len).expect("unreachable"))
@@ -395,15 +396,82 @@ impl<'a> StrBuf<'a> {
 		let valid_len = match from_utf8(data) {
 			Ok(valid) => valid.len(),
 			Err(error) => match error.valid_up_to() {
-				0 => {
-					return Ok(Err(Utf8Error {
-						len: error.error_len().expect("unreachable"),
-					}))
-				}
+				0 => match error.error_len() {
+					None => return Err(Indeterminate::new()),
+					Some(error_len) => return Ok(Err(Utf8Error { len: error_len })),
+				},
 				len => len,
 			},
 		};
 
+		//TODO: Transform line endings!
+		Ok(Ok(unsafe {
+			//SAFETY: Validate above.
+			from_utf8_unchecked_mut(self.shift_filled(valid_len).expect("unreachable"))
+		}))
+	}
+
+	/// TODO
+	///
+	/// # Errors
+	///
+	/// Iff this buffer does not contain at least one byte, then [`Err<Indeterminate>`] is returned instead.
+	///
+	/// TODO
+	pub fn shift_chars_while_delimited(
+		&mut self,
+		mut predicate: impl FnMut(char) -> bool,
+		delimiter: &[u8],
+	) -> Result<Result<&'a mut str, Utf8Error>, Indeterminate> {
+		let data = match self
+			.filled()
+			.windows(delimiter.len())
+			.enumerate()
+			.find_map(|(i, window)| (window == delimiter).then_some(i))
+		{
+			Some(0) => {
+				return Ok(Ok(unsafe {
+					//SAFETY: The empty slice is always valid UTF-8.
+					from_utf8_unchecked_mut(self.shift_filled(0).expect("unreachable"))
+				}));
+			}
+			Some(i) => &self.filled()[..i],
+			None => 'partial: {
+				if delimiter.starts_with(self.filled()) {
+					return Err(Indeterminate::new());
+				}
+				for n in (0..delimiter.len()).rev() {
+					if self.filled().ends_with(&delimiter[..n]) {
+						break 'partial &self.filled()[..(self.filled - n)];
+					}
+				}
+				unreachable!()
+			}
+		};
+
+		debug_assert_ne!(data.len(), 0);
+
+		let valid_len = match from_utf8(data) {
+			Ok(valid) => valid
+				.chars()
+				.take_while(|c| predicate(*c))
+				.map(char::len_utf8)
+				.sum(),
+			Err(error) => match error.valid_up_to() {
+				0 => match error.error_len() {
+					None => return Err(Indeterminate::new()),
+					Some(error_len) => return Ok(Err(Utf8Error { len: error_len })),
+				},
+				len => from_utf8(&data[..len])
+					.expect("unreachable")
+					.chars()
+					.take_while(|c| predicate(*c))
+					.map(char::len_utf8)
+					.sum(),
+			},
+		};
+
+		//TODO: Transform line endings!
 		Ok(Ok(unsafe {
 			//SAFETY: Validate above.
 			from_utf8_unchecked_mut(self.shift_filled(valid_len).expect("unreachable"))

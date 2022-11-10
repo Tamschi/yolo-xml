@@ -65,6 +65,18 @@ impl Grammar for Xml1_0 {
 		.pipe(Ok)
 	}
 
+	/// [2]
+	fn test_Char(c: char) -> bool {
+		matches!(c,
+			| '\u{9}'
+			| '\u{A}'
+			| '\u{D}'
+			| '\u{20}'..='\u{D7FF}'
+			| '\u{E000}'..='\u{FFFD}'
+			| '\u{10000}'..='\u{10FFFF}'
+		)
+	}
+
 	/// [22]
 	///
 	/// Will never reject in XML 1.0.
@@ -173,6 +185,9 @@ pub(super) trait Grammar {
 		.pipe(Ok)
 	}
 
+	/// [2]
+	fn test_Char(c: char) -> bool;
+
 	/// [3]
 	/// Start tokens: *0x20* | *0x9* | *0xD* | *0xA*
 	#[instrument(ret(Debug))]
@@ -276,7 +291,28 @@ pub(super) trait Grammar {
 		todo!()
 	}
 
+	/// [14]
+	#[instrument(ret(Debug))]
+	fn CharData<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
+		match (state, ret_val) {
+			(0, _) => {
+				match buffer.shift_chars_while_delimited(
+					|c| c != '<' && c != '&' && Self::test_Char(c),
+					b"]]>",
+				)? {
+					Ok(x) if x.is_empty() => Exit(Accept),
+					Ok(chunk) => Yield(0, Event::CharDataChunk(chunk).into()),
+					Err(error) => Error(Error::Utf8Error(error)),
+				}
+			}
+
+			_ => unreachable!(),
+		}
+		.pipe(Ok)
+	}
+
 	/// [16]
+	/// Start tokens: `<?`
 	#[instrument(ret(Debug))]
 	fn PI<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
 		match (state, ret_val) {
@@ -725,7 +761,23 @@ pub(super) trait Grammar {
 	/// [43]
 	#[instrument(ret(Debug))]
 	fn content<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
-		todo!()
+		match (state, ret_val) {
+			(0, _) => Call!(1, CharData),
+			(1, _) => match buffer.filled() {
+				[] | [b'<'] => return Err(MoreInputRequired::new()),
+				[b'<', b'/', ..] => Exit(Accept),
+				_ => Continue(2),
+			},
+			(2, _) => Call!(3, Comment),
+			(3, Reject) => Call!(4, CDSect),
+			(4, Reject) => Call!(5, PI),
+			(5, Reject) => Call!(6, element),
+			(6, Reject) => Call!(7, Reference),
+			(7, Reject) => Exit(Accept),
+			(2..=7, Accept) => Call!(1, CharData),
+			_ => unreachable!(),
+		}
+		.pipe(Ok)
 	}
 
 	/// [45]
@@ -864,9 +916,51 @@ pub(super) trait Grammar {
 	}
 
 	/// [66]
+	/// Start tokens: `&#`
 	#[instrument(ret(Debug))]
 	fn CharRef<'a>(buffer: &mut StrBuf<'a>, state: u8, ret_val: RetVal) -> NextFnR<'a> {
-		todo!()
+		match (state, ret_val) {
+			(0, _) => {
+				if let Some(start) = buffer.shift_known_array(b"&#x")? {
+					Yield(3, Event::CharRefHexadecimalStart(start).into())
+				} else if let Some(start) = buffer.shift_known_array(b"&#")? {
+					Yield(1, Event::CharRefDecimalStart(start).into())
+				} else {
+					Exit(Reject)
+				}
+			}
+			(1, _) => match buffer.shift_bytes_while(|c| (b'0'..=b'9').contains(&c))? {
+				[] => Error(Error::ExpectedDecimalDigit),
+				chunk => Yield(2, Event::CharRefDecimalChunk(chunk).into()),
+			},
+			(2, _) => match buffer.shift_bytes_while(|c| (b'0'..=b'9').contains(&c))? {
+				[] => Continue(5),
+				chunk => Yield(2, Event::CharRefDecimalChunk(chunk).into()),
+			},
+			(3, _) => match buffer.shift_bytes_while(|c| {
+				(b'0'..=b'9').contains(&c)
+					|| (b'a'..=b'f').contains(&c)
+					|| (b'A'..=b'F').contains(&c)
+			})? {
+				[] => Error(Error::ExpectedHexadecimalDigit),
+				chunk => Yield(4, Event::CharRefHexadecimalChunk(chunk).into()),
+			},
+			(4, _) => match buffer.shift_bytes_while(|c| {
+				(b'0'..=b'9').contains(&c)
+					|| (b'a'..=b'f').contains(&c)
+					|| (b'A'..=b'F').contains(&c)
+			})? {
+				[] => Continue(5),
+				chunk => Yield(4, Event::CharRefHexadecimalChunk(chunk).into()),
+			},
+			(5, _) => match buffer.shift_known_array(b";")? {
+				Some(end) => Yield(6, Event::CharRefEnd(end).into()),
+				None => Error(Error::ExpectedLiteral(b";")),
+			},
+			(6, _) => Exit(Accept),
+			_ => unreachable!(),
+		}
+		.pipe(Ok)
 	}
 
 	/// [67]

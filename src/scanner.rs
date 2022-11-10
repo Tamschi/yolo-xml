@@ -262,6 +262,12 @@ pub enum Event<'a> {
 	PUBLIC(&'a mut [u8; 6]),
 	NotationDeclEnd(&'a mut [u8; 1]),
 	NameChunk(&'a mut str),
+	CharDataChunk(&'a mut str),
+	CharRefDecimalStart(&'a mut [u8; 2]),
+	CharRefHexadecimalStart(&'a mut [u8; 3]),
+	CharRefDecimalChunk(&'a mut [u8]),
+	CharRefHexadecimalChunk(&'a mut [u8]),
+	CharRefEnd(&'a mut [u8; 1]),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -309,5 +315,6 @@ pub enum Error {
 	ExpectedNotationDeclEnd,
 	UnsupportedXmlVersion,
 	ExpectedDecimalDigit,
+	ExpectedHexadecimalDigit,
 	DoubleDashInComment,
 }
