@@ -78,7 +78,7 @@ impl Debug for Scanner {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ScannerError {
 	DepthLimitExceeded,
 	XmlError(Error),
@@ -282,7 +282,7 @@ pub enum TokenizedType<'a> {
 	NMTOKENS(&'a mut [u8; 8]),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Error {
 	ExpectedLiteral(&'static [u8]),
 	ExpectedQuote,
@@ -309,4 +309,5 @@ pub enum Error {
 	ExpectedNotationDeclEnd,
 	UnsupportedXmlVersion,
 	ExpectedDecimalDigit,
+	DoubleDashInComment,
 }

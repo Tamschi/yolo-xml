@@ -4,7 +4,7 @@ use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, Registry};
 use tracing_tree::HierarchicalLayer;
 use yolo_xml::{
 	buffer::StrBuf,
-	scanner::{Event, Scanner},
+	scanner::{Error, Event, Scanner, ScannerError},
 };
 
 #[test]
@@ -14,6 +14,7 @@ fn xml_declaration() {
 	expect_events(
 		"<?xml version=\"1.1\"?>",
 		&[Event::VersionChunk(&mut b"1.1".to_owned())],
+		None,
 	);
 }
 
@@ -21,7 +22,7 @@ fn xml_declaration() {
 fn downgrade_1() {
 	setup();
 
-	expect_events(" ", &[]);
+	expect_events(" ", &[], None);
 }
 
 #[test]
@@ -34,6 +35,7 @@ fn downgrade_2() {
 			Event::VersionChunk(&mut b"1.".to_owned()),
 			Event::VersionChunk(&mut b"0".to_owned()),
 		],
+		None,
 	);
 }
 
@@ -47,6 +49,7 @@ fn downgrade_3() {
 			Event::VersionChunk(&mut b"1.".to_owned()),
 			Event::VersionChunk(&mut b"12345".to_owned()),
 		],
+		None,
 	);
 }
 
@@ -60,6 +63,7 @@ fn downgrade_4() {
 			Event::VersionChunk(&mut b"1.".to_owned()),
 			Event::VersionChunk(&mut b"77777".to_owned()),
 		],
+		None,
 	);
 }
 
@@ -74,10 +78,54 @@ fn empty() {
 			Event::NameChunk(&mut "empty".to_owned()),
 			Event::StartTagEndEmpty(&mut b"/>".to_owned()),
 		],
+		None,
 	);
 }
 
-fn expect_events(input: impl AsRef<[u8]>, events: &[Event]) {
+#[test]
+fn comment_empty() {
+	setup();
+
+	expect_events(
+		"<!---->",
+		&[
+			Event::CommentStart(&mut b"<!--".to_owned()),
+			Event::CommentEnd(&mut b"-->".to_owned()),
+		],
+		None,
+	);
+}
+
+#[test]
+fn comment() {
+	setup();
+
+	expect_events(
+		"<!-- -->",
+		&[
+			Event::CommentStart(&mut b"<!--".to_owned()),
+			Event::CommentChunk(&mut " ".to_owned()),
+			Event::CommentEnd(&mut b"-->".to_owned()),
+		],
+		None,
+	);
+}
+
+#[test]
+fn comment_error() {
+	setup();
+
+	expect_events(
+		"<!-- -- -->",
+		&[
+			Event::CommentStart(&mut b"<!--".to_owned()),
+			Event::CommentChunk(&mut " ".to_owned()),
+		],
+		Some(ScannerError::XmlError(Error::DoubleDashInComment)),
+	);
+}
+
+fn expect_events(input: impl AsRef<[u8]>, events: &[Event], error: Option<ScannerError>) {
 	let mut buffer = Vec::from_iter(input.as_ref().iter().copied().map(MaybeUninit::new));
 	let mut buffer = StrBuf::new(buffer.as_mut_slice());
 	unsafe {
@@ -92,11 +140,17 @@ fn expect_events(input: impl AsRef<[u8]>, events: &[Event]) {
 			*expected
 		);
 	}
-	{
-		let _span = info_span!("Expecting needs more data").entered();
-		scanner.resume(&mut buffer).unwrap_err();
+
+	if let Some(error) = error {
+		let _span = info_span!("Expecting error").entered();
+		assert_eq!(scanner.resume(&mut buffer).unwrap().unwrap_err(), error,);
+	} else {
+		{
+			let _span = info_span!("Expecting needs more data").entered();
+			scanner.resume(&mut buffer).unwrap_err();
+		}
+		assert_eq!(buffer.filled().len(), 0);
 	}
-	assert_eq!(buffer.filled().len(), 0);
 }
 
 static SETUP_ONCE: Once = Once::new();

@@ -26,7 +26,6 @@ pub struct StrBuf<'a> {
 	memory: &'a mut [MaybeUninit<u8>],
 	initialized: usize,
 	filled: usize,
-	validated: usize,
 }
 
 impl Debug for StrBuf<'_> {
@@ -71,13 +70,8 @@ impl Debug for StrBuf<'_> {
 
 		write!(
 			f,
-			"{}̝{}+{:?}",
-			Digest(self.validated(), 20, "⸌⸍"),
-			Digest(
-				&String::from_utf8_lossy(self.unvalidated_filled()),
-				20,
-				"⸌⸍"
-			),
+			"{}+{:?}",
+			Digest(&String::from_utf8_lossy(self.filled()), 20, "⸌⸍"),
 			self.remaining_len()
 		)
 	}
@@ -91,21 +85,6 @@ impl<'a> StrBuf<'a> {
 			memory,
 			initialized: 0,
 			filled: 0,
-			validated: 0,
-		}
-	}
-
-	#[must_use]
-	pub fn validated(&self) -> &str {
-		unsafe { from_utf8_unchecked(&*(addr_of!(self.memory[0..self.validated]) as *const [u8])) }
-	}
-
-	#[must_use]
-	pub fn validated_mut(&mut self) -> &mut str {
-		unsafe {
-			from_utf8_unchecked_mut(
-				&mut *(addr_of_mut!(self.memory[0..self.validated]) as *mut [u8]),
-			)
 		}
 	}
 
@@ -117,11 +96,6 @@ impl<'a> StrBuf<'a> {
 	#[must_use]
 	pub fn maybe_uninitialized(&self) -> &[MaybeUninit<u8>] {
 		self.memory
-	}
-
-	#[must_use]
-	pub fn unvalidated_filled(&self) -> &[u8] {
-		unsafe { &*(addr_of!(self.memory[self.validated..self.filled]) as *const [u8]) }
 	}
 
 	#[must_use]
@@ -167,41 +141,10 @@ impl<'a> StrBuf<'a> {
 		self.remaining_initialized()
 	}
 
-	pub fn validate(&mut self) -> Fine<&mut str, Utf8Error> {
-		match from_utf8(&self.filled()[self.validated..]) {
-			Ok(_) => self.validated = self.filled,
-			Err(e) => {
-				self.validated += e.valid_up_to();
-				if let Some(len) = e.error_len() {
-					return (self.validated_mut(), Err(Utf8Error { len }));
-				}
-			}
-		}
-		return (self.validated_mut(), Ok(()));
-	}
-
-	pub fn invalidate(&mut self) {
-		self.validated = 0;
-	}
-
-	pub fn shift_validated(&mut self, len: usize) -> Result<&'a mut str, OutOfBoundsError> {
-		if self.validated < len {
-			Err(OutOfBoundsError::new())
-		} else {
-			self.validated -= len;
-			self.filled -= len;
-			self.initialized -= len;
-			let (validated, memory) = mem::take(&mut self.memory).split_at_mut(len);
-			self.memory = memory;
-			Ok(unsafe { &mut *(validated as *mut [MaybeUninit<u8>] as *mut str) })
-		}
-	}
-
 	pub fn shift_filled(&mut self, len: usize) -> Result<&'a mut [u8], OutOfBoundsError> {
 		if self.filled < len {
 			Err(OutOfBoundsError::new())
 		} else {
-			self.validated = self.validated.saturating_sub(len);
 			self.filled -= len;
 			self.initialized -= len;
 			let (filled, memory) = mem::take(&mut self.memory).split_at_mut(len);
@@ -227,7 +170,6 @@ impl<'a> StrBuf<'a> {
 			}
 		} else {
 			if unsafe { *(addr_of!(self.memory[0..LEN]).cast::<[u8; LEN]>()) } == *data {
-				self.validated = self.validated.saturating_sub(LEN);
 				self.filled -= LEN;
 				self.initialized -= LEN;
 				let (skipped, memory) = self.memory.split_at_mut(LEN);
@@ -258,7 +200,6 @@ impl<'a> StrBuf<'a> {
 			Err(Indeterminate::new())
 		} else {
 			if predicate(unsafe { &*(addr_of!(self.memory[0..LEN]).cast::<[u8; LEN]>()) }) {
-				self.validated = self.validated.saturating_sub(LEN);
 				self.filled -= LEN;
 				self.initialized -= LEN;
 				let (skipped, memory) = self.memory.split_at_mut(LEN);
@@ -298,11 +239,13 @@ impl<'a> StrBuf<'a> {
 		}
 	}
 
-	/// Skips past contiguous bytes at the beginning of the buffer that fulfill `predicate`.
+	/// Skips past contiguous text at the beginning of the buffer that fulfill `predicate`.
 	///
 	/// # Errors
 	///
 	/// Iff this buffer does not contain at least one byte, then [`Err<Indeterminate>`] is returned instead.
+	///
+	/// TODO
 	pub fn shift_chars_while(
 		&mut self,
 		mut predicate: impl FnMut(char) -> bool,
@@ -344,11 +287,13 @@ impl<'a> StrBuf<'a> {
 		}))
 	}
 
-	/// Skips past contiguous bytes at the beginning of the buffer that fulfill `predicate`.
+	/// Skips past contiguous text at the beginning of the buffer that fulfill `predicate`.
 	///
 	/// # Errors
 	///
 	/// Iff this buffer does not contain at least one byte, then [`Err<Indeterminate>`] is returned instead.
+	///
+	/// TODO
 	pub fn shift_chars_start_while(
 		&mut self,
 		start_predicate: impl FnOnce(char) -> bool,
@@ -408,6 +353,63 @@ impl<'a> StrBuf<'a> {
 		}))
 	}
 
+	/// TODO
+	///
+	/// # Errors
+	///
+	/// Iff this buffer does not contain at least one byte, then [`Err<Indeterminate>`] is returned instead.
+	///
+	/// TODO
+	pub fn shift_chars_delimited(
+		&mut self,
+		delimiter: &[u8],
+	) -> Result<Result<&'a mut str, Utf8Error>, Indeterminate> {
+		let data = match self
+			.filled()
+			.windows(delimiter.len())
+			.enumerate()
+			.find_map(|(i, window)| (window == delimiter).then_some(i))
+		{
+			Some(0) => {
+				return Ok(Ok(unsafe {
+					//SAFETY: The empty slice is always valid UTF-8.
+					from_utf8_unchecked_mut(self.shift_filled(0).expect("unreachable"))
+				}));
+			}
+			Some(i) => &self.filled()[..i],
+			None => 'partial: {
+				if delimiter.starts_with(self.filled()) {
+					return Err(Indeterminate::new());
+				}
+				for n in (0..delimiter.len()).rev() {
+					if self.filled().ends_with(&delimiter[..n]) {
+						break 'partial &self.filled()[..(self.filled - n)];
+					}
+				}
+				unreachable!()
+			}
+		};
+
+		debug_assert_ne!(data.len(), 0);
+
+		let valid_len = match from_utf8(data) {
+			Ok(valid) => valid.len(),
+			Err(error) => match error.valid_up_to() {
+				0 => {
+					return Ok(Err(Utf8Error {
+						len: error.error_len().expect("unreachable"),
+					}))
+				}
+				len => len,
+			},
+		};
+
+		Ok(Ok(unsafe {
+			//SAFETY: Validate above.
+			from_utf8_unchecked_mut(self.shift_filled(valid_len).expect("unreachable"))
+		}))
+	}
+
 	/// Returns the number of bytes that can still be inserted into this buffer in the current memory allocation (without resetting it).
 	#[must_use]
 	pub fn remaining_len(&self) -> usize {
@@ -432,7 +434,6 @@ impl<'a> StrBuf<'a> {
 				memory,
 				initialized: self.filled,
 				filled: self.filled,
-				validated: self.validated,
 			})
 		}
 	}
@@ -501,7 +502,7 @@ impl<'a> StrBuf<'a> {
 	}
 }
 
-#[derive(Debug, Error, Diagnostic)]
+#[derive(Debug, Error, Diagnostic, PartialEq, Eq)]
 #[error("Invalid UTF-8 encountered.")]
 pub struct Utf8Error {
 	len: usize,

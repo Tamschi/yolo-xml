@@ -293,27 +293,20 @@ pub(super) trait Grammar {
 				None => Error(Error::ExpectedWhitespaceOrPIEnd),
 			},
 			(4, _) => {
-				if let Some(end) = buffer.shift_known_array(b"?>")? {
-					Yield(5, Event::PIEnd(end).into())
-				} else {
-					match buffer.validate() {
-						(valid, Err(error)) if valid.is_empty() => Error(Error::Utf8Error(error)),
-						(valid, Ok(())) if valid.is_empty() => return Err(MoreInputRequired::new()),
-						//BUG: Detect disallowed characters!
-						(_valid, _) => Yield(
-							4,
-							Event::PIChunk(
-								buffer
-									.shift_validated(if buffer.validated().ends_with('?') {
-										buffer.validated().len() - 1
-									} else {
-										buffer.validated().len()
-									})
-									.expect("unreachable"),
-							)
-							.into(),
-						),
-					}
+				match buffer.shift_chars_delimited(b"?>")? {
+					Err(error) => Error(Error::Utf8Error(error)),
+					Ok(valid) if valid.is_empty() => Yield(
+						5,
+						Event::PIEnd(
+							buffer
+								.shift_known_array(b"?>")
+								.expect("unreachable")
+								.expect("unreachable"),
+						)
+						.into(),
+					),
+					//BUG: Detect disallowed characters!
+					Ok(valid) => Yield(4, Event::PIChunk(valid).into()),
 				}
 			}
 			(5, _) => Exit(Accept),
@@ -409,40 +402,14 @@ pub(super) trait Grammar {
 				None => Exit(Reject),
 			},
 			(1, _) => {
-				if let Some(comment_end) = buffer.shift_known_array(b"-->")? {
-					Yield(2, Event::CommentEnd(comment_end).into())
-				} else if buffer.filled().starts_with(b"--") {
-					Error(Error::UnexpectedSequence(b"--"))
-				} else {
-					match buffer.validate() {
-						(valid, Err(error)) if valid.is_empty() => Error(Error::Utf8Error(error)),
-						(valid, Ok(())) if valid.is_empty() => return Err(MoreInputRequired::new()),
-						//BUG: Detect disallowed characters!
-						(valid, _) => {
-							if let Some(dashes_at) = valid.find("--") {
-								Yield(
-									1,
-									Event::CommentChunk(
-										buffer.shift_validated(dashes_at).expect("unreachable"),
-									)
-									.into(),
-								)
-							} else {
-								let chunk_len = if valid.ends_with('-') {
-									valid.len() - "-".len()
-								} else {
-									valid.len()
-								};
-								Yield(
-									1,
-									Event::CommentChunk(
-										buffer.shift_validated(chunk_len).expect("unreachable"),
-									)
-									.into(),
-								)
-							}
-						}
-					}
+				match buffer.shift_chars_delimited(b"--")? {
+					Err(error) => Error(Error::Utf8Error(error)),
+					Ok(valid) if valid.is_empty() => match buffer.shift_known_array(b"-->")? {
+						Some(end) => Yield(2, Event::CommentEnd(end).into()),
+						None => Error(Error::DoubleDashInComment),
+					},
+					//BUG: Detect disallowed characters!
+					Ok(valid) => Yield(1, Event::CommentChunk(valid).into()),
 				}
 			}
 			(2, _) => Exit(Accept),
